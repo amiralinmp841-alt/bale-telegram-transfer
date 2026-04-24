@@ -386,4 +386,3 @@ def handle_bale_update(upd):
             tg_send_document(tg_user, file_bytes, file_name, caption)
 
         return
-`
