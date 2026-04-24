@@ -162,7 +162,7 @@ def handle_bale_update(upd):
         if not token:
             token = create_link_for_bale(chat_id)
 
-        tg_link = f"https://t.me/YOUR_TELEGRAM_BOT?start={token}"
+        tg_link = f"https://t.me/Sbmu_Transporter_bot?start={token}"
 
         bale_send_text(chat_id, f"برای اتصال به تلگرام روی لینک زیر بزن:\n{tg_link}")
         return
