@@ -374,8 +374,34 @@ def handle_bale_update(upd):
 
     # ------ FILE ------
     try:
-        file_obj = msg.get("photo") or msg.get("video") or msg.get("voice") \
-                   or msg.get("audio") or msg.get("document") or msg.get("file")
+        file_obj = None
+        file_type = None
+        
+        if "photo" in msg:
+            file_obj = msg["photo"][-1]
+            file_type = "photo"
+        
+        elif "video" in msg:
+            file_obj = msg["video"]
+            file_type = "video"
+        
+        elif "voice" in msg:
+            file_obj = msg["voice"]
+            file_type = "voice"
+        
+        elif "audio" in msg:
+            file_obj = msg["audio"]
+            file_type = "audio"
+        
+        elif "document" in msg:
+            file_obj = msg["document"]
+            file_type = "document"
+        
+        elif "file" in msg:
+            file_obj = msg["file"]
+            file_type = "document"
+        
+        
 
         if file_obj and "file_id" in file_obj:
             file_id = file_obj["file_id"]
@@ -386,16 +412,21 @@ def handle_bale_update(upd):
 
             file_bytes = requests.get(file_url).content
 
-            if "photo" in msg:
+            if file_type == "photo":
                 tg_send_photo(tg_user, file_bytes, caption)
-            elif "video" in msg:
+            
+            elif file_type == "video":
                 tg_send_video(tg_user, file_bytes, caption)
-            elif "voice" in msg:
+            
+            elif file_type == "voice":
                 tg_send_voice(tg_user, file_bytes)
-            elif "audio" in msg:
+            
+            elif file_type == "audio":
                 tg_send_audio(tg_user, file_bytes)
+            
             else:
                 tg_send_document(tg_user, file_bytes, file_name, caption)
+            
 
     except Exception:
         bale_send_text(chat_id, "❌ ارسال فایل به تلگرام ناموفق بود. احتمالاً حجم فایل زیاد است.")
