@@ -8,8 +8,8 @@ from db_manager import (
 # ----------------------------
 # ⚠ توکن ربات‌ها
 # ----------------------------
-TELEGRAM_TOKEN = "YOUR_TELEGRAM_TOKEN"
-BALE_TOKEN = "YOUR_BALE_TOKEN"
+TELEGRAM_TOKEN = "8231574639:AAHm25poUDviMPPYryiuTK_yEvO2AnjFJsw"
+BALE_TOKEN = "1092992041:X2xu7Wg1oICAR54us-s-cTsT8E0YNXhpR5c"
 
 TG_API = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/"
 TG_FILE = f"https://api.telegram.org/file/bot{TELEGRAM_TOKEN}/"
