@@ -472,61 +472,63 @@ def handle_bale_update(upd):
     try:
         file_obj = None
         file_type = None
-        
+    
         if "photo" in msg:
-            file_obj = msg["photo"]   # شیء تکی
+            file_obj = msg["photo"]
             file_type = "photo"
-        
+    
         elif "video" in msg:
             file_obj = msg["video"]
             file_type = "video"
-        
+    
         elif "voice" in msg:
             file_obj = msg["voice"]
             file_type = "voice"
-        
+    
         elif "audio" in msg:
             file_obj = msg["audio"]
             file_type = "audio"
-        
+    
         elif "document" in msg:
-            file_obj = msg["document"][-1]   # فقط document آرایه است
+            file_obj = msg["document"][-1]
             file_type = "document"
-        
+    
         elif "file" in msg:
             file_obj = msg["file"][-1]
             file_type = "document"
-        
-        
-        
-
+    
         if not file_obj or "file_id" not in file_obj:
-            return  # nothing to send
-        
+            return
+    
         file_id = file_obj["file_id"]
-        
-        info = requests.get(BALE_API + "getFile", params={"file_id": file_id}).json()["result"]
-        file_url = info["file_url"]
+    
+        info = requests.get(
+            BALE_API + "getFile",
+            params={"file_id": file_id}
+        ).json()["result"]
+    
+        file_path = info["file_path"]
         file_name = info.get("file_name", "file.bin")
-        
+    
+        file_url = f"https://tapi.bale.ai/file/bot{BALE_TOKEN}/{file_path}"
         file_bytes = requests.get(file_url).content
-        
+    
         if file_type == "photo":
             tg_send_photo(tg_user, file_bytes, caption)
-        
+    
         elif file_type == "video":
             tg_send_video(tg_user, file_bytes, caption)
-        
+    
         elif file_type == "voice":
             tg_send_voice(tg_user, file_bytes)
-        
+    
         elif file_type == "audio":
             tg_send_audio(tg_user, file_bytes)
-        
+    
         else:
             tg_send_document(tg_user, file_bytes, file_name, caption)
-        
-            
-
-    except Exception:
-        bale_send_text(chat_id, "❌ ارسال فایل به تلگرام ناموفق بود. احتمالاً حجم فایل زیاد است.")
+    
+    except Exception as e:
+        print("BALE → TG FILE ERROR:", e)
+        bale_send_text(chat_id, "❌ ارسال فایل به تلگرام ناموفق بود.")
+    
