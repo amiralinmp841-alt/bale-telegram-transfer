@@ -473,25 +473,24 @@ def handle_bale_update(upd):
         file_obj = None
         file_type = None
         
-        # تمام انواع فایل در بله آرایه هستند
         if "photo" in msg:
-            file_obj = msg["photo"][-1]
+            file_obj = msg["photo"]   # شیء تکی
             file_type = "photo"
         
         elif "video" in msg:
-            file_obj = msg["video"][-1]
+            file_obj = msg["video"]
             file_type = "video"
         
         elif "voice" in msg:
-            file_obj = msg["voice"][-1]
+            file_obj = msg["voice"]
             file_type = "voice"
         
         elif "audio" in msg:
-            file_obj = msg["audio"][-1]
+            file_obj = msg["audio"]
             file_type = "audio"
         
         elif "document" in msg:
-            file_obj = msg["document"][-1]
+            file_obj = msg["document"][-1]   # فقط document آرایه است
             file_type = "document"
         
         elif "file" in msg:
