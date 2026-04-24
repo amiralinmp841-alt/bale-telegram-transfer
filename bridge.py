@@ -1,11 +1,14 @@
 import os
 import requests
 import time
+import threading
 
 from db_manager import (
     create_link_for_bale, get_link_by_bale, activate_link,
-    get_link_by_telegram, get_pair, deactivate
+    get_link_by_telegram, get_pair, deactivate,
+    get_auto_delete, toggle_auto_delete   # ✔ اضافه شد
 )
+
 
 # =============================
 # ENV VARIABLES
@@ -34,10 +37,12 @@ TG_KEYBOARD = {
 BALE_KEYBOARD = {
     "keyboard": [
         [{"text": "دریافت لینک"}],
-        [{"text": "تغییر لینک و قطع اتصال"}]
+        [{"text": "تغییر لینک و قطع اتصال"}],
+        [{"text": "حذف اتومات"}]   # ✔ جدید
     ],
     "resize_keyboard": True
 }
+
 
 # =============================
 # Telegram send helpers
@@ -184,6 +189,18 @@ def bale_polling_loop():
 
         time.sleep(0.4)
 
+
+def delete_after_delay(chat_id, message_id):
+    time.sleep(20)
+    try:
+        requests.post(BALE_API + "deleteMessage", json={
+            "chat_id": chat_id,
+            "message_id": message_id
+        })
+    except:
+        pass
+
+
 # =============================
 # TELEGRAM HANDLER
 # =============================
@@ -240,60 +257,120 @@ def handle_telegram_update(upd):
 
     # ------ TEXT ------
     if "text" in msg:
-        bale_send_text(bale_user, msg["text"])
+        resp = requests.post(
+            BALE_API + "sendMessage",
+            json={"chat_id": bale_user, "text": msg["text"], "reply_markup": BALE_KEYBOARD}
+        ).json()
+    
+        # ✔ Auto Delete
+        if get_auto_delete(token) == 1:
+            mid = resp.get("result", {}).get("message_id")
+            if mid:
+                threading.Thread(target=delete_after_delay, args=(bale_user, mid), daemon=True).start()
+    
         return
+
 
     # ------ FILE ------
     try:
         file_id = None
         file_type = None
-
+    
         if "photo" in msg:
             file_id = msg["photo"][-1]["file_id"]
             file_type = "photo"
-
+    
         elif "video" in msg:
             file_id = msg["video"]["file_id"]
             file_type = "video"
-
+    
         elif "voice" in msg:
             file_id = msg["voice"]["file_id"]
             file_type = "voice"
-
+    
         elif "audio" in msg:
             file_id = msg["audio"]["file_id"]
             file_type = "audio"
-
+    
         elif "document" in msg:
             file_id = msg["document"]["file_id"]
             file_type = "document"
-
+    
         elif "animation" in msg:
             file_id = msg["animation"]["file_id"]
-            file_type = "gif"   # ✔ ارسال گیف واقعی
-
+            file_type = "gif"
+    
         if not file_id:
             return
-
-        file_info = requests.get(TG_API + "getFile", params={"file_id": file_id}).json()["result"]
+    
+        file_info = requests.get(
+            TG_API + "getFile",
+            params={"file_id": file_id}
+        ).json()["result"]
+    
         file_path = file_info["file_path"]
         file_bytes = requests.get(TG_FILE + file_path).content
-
+    
+        resp = None
+    
         if file_type == "photo":
-            bale_send_photo(bale_user, file_bytes, caption)
+            resp = requests.post(
+                BALE_API + "sendPhoto",
+                files={"photo": ("photo.jpg", file_bytes)},
+                data={"chat_id": bale_user, "caption": caption or ""}
+            ).json()
+    
         elif file_type == "video":
-            bale_send_video(bale_user, file_bytes, caption)
+            resp = requests.post(
+                BALE_API + "sendVideo",
+                files={"video": ("video.mp4", file_bytes)},
+                data={"chat_id": bale_user, "caption": caption or ""}
+            ).json()
+    
         elif file_type == "voice":
-            bale_send_voice(bale_user, file_bytes)
+            resp = requests.post(
+                BALE_API + "sendVoice",
+                files={"voice": ("voice.ogg", file_bytes)},
+                data={"chat_id": bale_user}
+            ).json()
+    
         elif file_type == "audio":
-            bale_send_audio(bale_user, file_bytes)
+            resp = requests.post(
+                BALE_API + "sendAudio",
+                files={"audio": ("audio.mp3", file_bytes)},
+                data={"chat_id": bale_user}
+            ).json()
+    
         elif file_type == "gif":
-            bale_send_document(bale_user, file_bytes, "file.gif", caption)
+            resp = requests.post(
+                BALE_API + "sendDocument",
+                files={"document": ("file.gif", file_bytes)},
+                data={"chat_id": bale_user, "caption": caption or ""}
+            ).json()
+    
         else:
-            bale_send_document(bale_user, file_bytes, file_path.split("/")[-1], caption)
-
+            resp = requests.post(
+                BALE_API + "sendDocument",
+                files={"document": (file_path.split("/")[-1], file_bytes)},
+                data={"chat_id": bale_user, "caption": caption or ""}
+            ).json()
+    
+        # -------------------------
+        # Auto Delete (20s)
+        # -------------------------
+        if get_auto_delete(token) == 1 and resp:
+            mid = resp.get("result", {}).get("message_id")
+            if mid:
+                import threading
+                threading.Thread(
+                    target=delete_after_delay,
+                    args=(bale_user, mid),
+                    daemon=True
+                ).start()
+    
     except Exception:
         tg_send_text(chat_id, "❌ ارسال فایل به بله ناموفق بود. احتمالاً حجم بیش از حد است.")
+    
 
 # =============================
 # BALE HANDLER
@@ -354,6 +431,25 @@ def handle_bale_update(upd):
         return
 
     # -----------------------------------------------
+    # ✔ دکمه جدید: حذف اتومات
+    # -----------------------------------------------
+    if "text" in msg and msg["text"] == "حذف اتومات":
+        token = get_link_by_bale(chat_id)
+
+        if not token:
+            bale_send_text(chat_id, "❌ هنوز وصل نیستید.")
+            return
+
+        new_state = toggle_auto_delete(token)
+
+        if new_state == 1:
+            bale_send_text(chat_id, "حذف اتومات فعال شد ✓")
+        else:
+            bale_send_text(chat_id, "حذف اتومات غیرفعال شد ✗")
+
+        return
+    
+    # -----------------------------------------------
     # ارسال پیام/فایل به تلگرام
     # -----------------------------------------------
     token = get_link_by_bale(chat_id)
@@ -377,55 +473,60 @@ def handle_bale_update(upd):
         file_obj = None
         file_type = None
         
+        # تمام انواع فایل در بله آرایه هستند
         if "photo" in msg:
             file_obj = msg["photo"][-1]
             file_type = "photo"
         
         elif "video" in msg:
-            file_obj = msg["video"]
+            file_obj = msg["video"][-1]
             file_type = "video"
         
         elif "voice" in msg:
-            file_obj = msg["voice"]
+            file_obj = msg["voice"][-1]
             file_type = "voice"
         
         elif "audio" in msg:
-            file_obj = msg["audio"]
+            file_obj = msg["audio"][-1]
             file_type = "audio"
         
         elif "document" in msg:
-            file_obj = msg["document"]
+            file_obj = msg["document"][-1]
             file_type = "document"
         
         elif "file" in msg:
-            file_obj = msg["file"]
+            file_obj = msg["file"][-1]
             file_type = "document"
         
         
+        
 
-        if file_obj and "file_id" in file_obj:
-            file_id = file_obj["file_id"]
-
-            info = requests.get(BALE_API + "getFile", params={"file_id": file_id}).json()["result"]
-            file_url = info["file_url"]
-            file_name = info.get("file_name", "file")
-
-            file_bytes = requests.get(file_url).content
-
-            if file_type == "photo":
-                tg_send_photo(tg_user, file_bytes, caption)
-            
-            elif file_type == "video":
-                tg_send_video(tg_user, file_bytes, caption)
-            
-            elif file_type == "voice":
-                tg_send_voice(tg_user, file_bytes)
-            
-            elif file_type == "audio":
-                tg_send_audio(tg_user, file_bytes)
-            
-            else:
-                tg_send_document(tg_user, file_bytes, file_name, caption)
+        if not file_obj or "file_id" not in file_obj:
+            return  # nothing to send
+        
+        file_id = file_obj["file_id"]
+        
+        info = requests.get(BALE_API + "getFile", params={"file_id": file_id}).json()["result"]
+        file_url = info["file_url"]
+        file_name = info.get("file_name", "file.bin")
+        
+        file_bytes = requests.get(file_url).content
+        
+        if file_type == "photo":
+            tg_send_photo(tg_user, file_bytes, caption)
+        
+        elif file_type == "video":
+            tg_send_video(tg_user, file_bytes, caption)
+        
+        elif file_type == "voice":
+            tg_send_voice(tg_user, file_bytes)
+        
+        elif file_type == "audio":
+            tg_send_audio(tg_user, file_bytes)
+        
+        else:
+            tg_send_document(tg_user, file_bytes, file_name, caption)
+        
             
 
     except Exception:
