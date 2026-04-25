@@ -238,3 +238,10 @@ def user_has_valid_key(bale_user_id):
             return True
 
     return False
+
+def get_inactive_keys():
+    db = load_db()
+    return {
+        k: v for k, v in db.get("keys", {}).items()
+        if v.get("is_active") == 0
+    }
