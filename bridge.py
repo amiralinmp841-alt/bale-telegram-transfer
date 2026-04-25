@@ -416,23 +416,24 @@ def handle_bale_update(upd):
         if handled:
             return
 
-    def leave_key(user_id):
-        db = load_db()
-        changed = False
-    
-        for key in db.get("keys", {}).values():
-            if user_id in key.get("users", []):
-                key["users"].remove(user_id)
-                key["used"] = max(0, key.get("used", 0) - 1)
-                changed = True
-                break
-    
-        if changed:
-            save_db(db)
-    
-        return changed
-    
-
+    # ==================================
+    # 🚪 خروج از اشتراک (باید اینجا باشد)
+    # ==================================
+    if text == "🚪 خروج از اشتراک":
+        if leave_key(chat_id):
+            bale_send_text(
+                chat_id,
+                "✅ با موفقیت از اشتراک خارج شدید.\n"
+                "اکنون می‌توانید کلید جدید ارسال کنید 🔑",
+                reply_markup={"remove_keyboard": True}
+            )
+        else:
+            bale_send_text(
+                chat_id,
+                "⚠️ شما اشتراک فعالی ندارید."
+            )
+        return
+        
     # -----------------------------------------------
     # ✅ اجازه ارسال کلید همیشه وجود دارد
     # -----------------------------------------------
