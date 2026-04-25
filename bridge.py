@@ -11,7 +11,6 @@ from db_manager import (
 )
 from panel import handle_admin_message, is_admin
 from db_manager import join_key
-from telegram import ReplyKeyboardRemove
 from db_manager import user_has_valid_key
 
 
@@ -405,8 +404,14 @@ def handle_bale_update(upd):
     # -----------------------------------------------
     if text.startswith("key_"):
         success, message = join_key(text, chat_id)
-        bale_send_text(chat_id, message)
+    
+        if success:
+            bale_send_text(chat_id, message, reply_markup=BALE_KEYBOARD)
+        else:
+            bale_send_text(chat_id, message, reply_markup={"remove_keyboard": True})
+    
         return
+    
 
     # -----------------------------------------------
     # ❌ اگر لاگین نیست → قفل کامل + حذف دکمه‌ها
@@ -417,7 +422,7 @@ def handle_bale_update(upd):
             "🔐 ابتدا کلید اشتراکت را ارسال کن.\n\n"
             "مثال:\n"
             "key_abc123",
-            reply_markup=ReplyKeyboardRemove()
+            reply_markup={"remove_keyboard": True}
         )
         return
 
