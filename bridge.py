@@ -105,12 +105,15 @@ def tg_send_voice(chat_id, file_bytes, caption=None):
 # Bale send helpers
 # =============================
 
-def bale_send_text(chat_id, text):
-    requests.post(BALE_API + "sendMessage", json={
+def bale_send_text(chat_id, text, reply_markup=None):
+    payload = {
         "chat_id": chat_id,
-        "text": text,
-        "reply_markup": BALE_KEYBOARD
-    })
+        "text": text
+    }
+    if reply_markup is not None:
+        payload["reply_markup"] = reply_markup
+
+    requests.post(BALE_API + "sendMessage", json=payload)
 
 
 def bale_send_photo(chat_id, file_bytes, caption=None):
