@@ -15,6 +15,7 @@ from db_manager import user_has_valid_key
 from db_manager import add_user_volume
 from db_manager import get_user_key, get_key_used_volume, get_time_info
 from db_manager import leave_key
+from db_manager import was_user_in_any_key
 
 
 
@@ -273,14 +274,18 @@ def handle_telegram_update(upd):
     caption = msg.get("caption")
 
 
-    if not user_has_valid_key(chat_id):
-        telegram_send_message(
+    # ======================================
+    # 🔒 قطع ارسال فقط اگر کاربر خارج شده
+    # ======================================
+    if not user_has_valid_key(chat_id) and was_user_in_any_key(bale_user):
+        tg_send_text(
             chat_id,
-            "❌ شما اشتراک فعالی در بله ندارید.\n"
-            "برای ادامه، لطفاً به یک اشتراک در بله وارد شوید!"
+            "❌ اتصال شما با بله قطع شد.\n"
+            "برای ادامه، لطفاً دوباره به یک اشتراک در بله وارد شوید 🔑"
         )
-        return  # ❌ جلو فوروارد را می‌گیرد
-        
+        return
+    
+
     # ------ TEXT ------
     if "text" in msg:
         resp = requests.post(
