@@ -420,19 +420,17 @@ def handle_bale_update(upd):
     # 🚪 خروج از اشتراک (باید اینجا باشد)
     # ==================================
     if text == "🚪 خروج از اشتراک":
-        left, new_token = leave_key(chat_id)
-    
-        if new_token:
-            tg_link = f"https://t.me/{TELEGRAM_BOT_USERNAME}?start={new_token}"
+        if leave_key(chat_id):
             bale_send_text(
                 chat_id,
                 "✅ از اشتراک خارج شدید.\n"
-                "⚠️ لینک اتصال قبلی منسوخ شد!\n"
+                "🔌 اتصال شما به تلگرام به‌طور کامل قطع شد."
             )
         else:
             bale_send_text(chat_id, "⚠️ شما اشتراک فعالی نداشتید.")
     
         return
+    
     
 
     # -----------------------------------------------
