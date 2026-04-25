@@ -213,31 +213,50 @@ def join_key(key_name, user_id):
 def user_has_valid_key(bale_user_id):
     db = load_db()
     now = int(time.time())
+    bale_user_id = str(bale_user_id)
 
     for key_name, key in db.get("keys", {}).items():
 
         if key.get("is_active") != 1:
             continue
 
+        # -------------------------------
+        # ⏰ انقضای کلید
+        # -------------------------------
         if key.get("expire", 0) <= now:
             key["is_active"] = 0
-            key["users"] = {}
 
-            # ⛔ قطع همه لینک‌های مربوط
+            # همه کاربران این کلید غیرفعال می‌شوند (حجم حفظ می‌شود)
+            for uid, udata in key.get("users", {}).items():
+                if isinstance(udata, dict):
+                    udata["active"] = False
+
+            # ⛔ قطع همه لینک‌های مربوط به این کاربر
             for token, pair in db.get("links", {}).items():
-                if pair.get("bale_user_id") == bale_user_id:
+                if str(pair.get("bale_user_id")) == bale_user_id:
                     pair["active"] = False
                     if pair.get("tg_user_id"):
                         db["tg_users"].pop(str(pair["tg_user_id"]), None)
-                    db["bale_users"].pop(str(bale_user_id), None)
+                    db["bale_users"].pop(bale_user_id, None)
 
             save_db(db)
             return False
 
-        if str(bale_user_id) in key.get("users", {}):
+        # -------------------------------
+        # ✅ بررسی عضویت معتبر کاربر
+        # -------------------------------
+        if bale_user_id in key.get("users", {}):
+            u = key["users"][bale_user_id]
+
+            # ساختار جدید
+            if isinstance(u, dict):
+                return u.get("active") is True
+
+            # ساختار قدیمی (عدد مصرف)
             return True
 
     return False
+
 
 def get_inactive_keys():
     db = load_db()
@@ -309,23 +328,25 @@ def leave_key(user_id):
     user_id = str(user_id)
     changed = False
 
-    # ----------------------------------
-    # 1️⃣ فقط بررسی اینکه کاربر عضو کلید هست
-    # ❌ حجم را حذف نکن
-    # ----------------------------------
     for key in db.get("keys", {}).values():
         users = key.get("users", {})
 
         if user_id in users:
-            # ❗ هیچ pop نکن
+            # پشتیبانی از دیتای قدیمی
+            if isinstance(users[user_id], (int, float)):
+                users[user_id] = {
+                    "used": users[user_id],
+                    "active": False
+                }
+            else:
+                users[user_id]["active"] = False
+
+            key["used"] = max(0, key.get("used", 0) - 1)
             changed = True
             break
 
-    # ----------------------------------
-    # 2️⃣ منسوخ کردن لینک اتصال (Logout واقعی)
-    # ----------------------------------
+    # قطع اتصال مثل تغییر لینک
     old_token = get_link_by_bale(user_id)
-
     if old_token:
         pair = get_pair(old_token)
         deactivate(old_token)
