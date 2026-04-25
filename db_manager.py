@@ -6,6 +6,9 @@ import time
 
 DB_PATH = "data/db.json"
 
+def ghost_id(uid):
+    return f"{uid}000"
+
 
 def load_db():
     os.makedirs("data", exist_ok=True)
@@ -180,9 +183,10 @@ def deactivate_key(key_name):
 # ==========================================
 # ✅ User Join Key (Stage 3.2)
 # ==========================================
-
 def join_key(key_name, user_id):
     db = load_db()
+    user_id = str(user_id)
+    ghost = ghost_id(user_id)
 
     key = db.get("keys", {}).get(key_name)
     if not key:
@@ -197,18 +201,26 @@ def join_key(key_name, user_id):
 
     users = key.get("users", {})
 
-    if str(user_id) in users:
+    # ✅ اگر قبلاً فعال است
+    if user_id in users:
         return False, "ℹ️ شما قبلاً با این رمز وارد شده‌اید."
 
+    # ✅ اگر نسخه 000 دار وجود دارد → ورود مجدد
+    if ghost in users:
+        users[user_id] = users[ghost]   # حفظ حجم
+        users.pop(ghost)
+        save_db(db)
+        return True, "✅ دوباره وارد شدید (حجم قبلی حفظ شد)."
+
+    # ✅ بررسی ظرفیت
     if len(users) >= key.get("max_users", 0):
         return False, "❌ ظرفیت کاربران این رمز تکمیل شده است."
 
-    # ✅ attach user
-    users[str(user_id)] = 0
-    key["users"] = users
-
+    # ✅ ورود جدید
+    users[user_id] = 0
     save_db(db)
     return True, "✅ با موفقیت وارد شدید."
+
 
 def user_has_valid_key(bale_user_id):
     db = load_db()
@@ -307,41 +319,33 @@ def get_time_info(key):
 def leave_key(user_id):
     db = load_db()
     user_id = str(user_id)
+    ghost = ghost_id(user_id)
     changed = False
 
-    # ----------------------------------
-    # 1️⃣ حذف کاربر از کلید اشتراک
-    # ----------------------------------
     for key in db.get("keys", {}).values():
         users = key.get("users", {})
 
         if user_id in users:
+            # ✅ تبدیل به ایدی روح
+            users[ghost] = users[user_id]
             users.pop(user_id)
-            key["used"] = max(0, key.get("used", 0) - 1)
             changed = True
-            break  # کاربر فقط یک کلید دارد
+            break
 
-    # ----------------------------------
-    # 2️⃣ منسوخ کردن لینک اتصال (دقیقاً مثل تغییر لینک)
-    # ----------------------------------
+    # 🔌 قطع لینک اتصال
     old_token = get_link_by_bale(user_id)
-
     if old_token:
         pair = get_pair(old_token)
-        deactivate(old_token)  # 🔥 لینک کاملاً می‌سوزد
+        deactivate(old_token)
 
-        # پیام به تلگرام
         if pair and pair.get("tg_user_id"):
             tg_send_text(
                 pair["tg_user_id"],
-                "❌ از اشتراک خود در بله خارج شدید و ارتباط شما با بله، قطع شد!"
+                "❌ از اشتراک خارج شدید و اتصال قطع شد."
             )
-
-        changed = True  # حتی اگر کلید نداشت، اتصال قطع شده
+        changed = True
 
     if changed:
         save_db(db)
 
     return changed
-
-    
