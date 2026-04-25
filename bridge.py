@@ -14,6 +14,8 @@ from db_manager import join_key
 from db_manager import user_has_valid_key
 from db_manager import add_user_volume
 from db_manager import get_user_key, get_key_used_volume, get_time_info
+from db_manager import leave_key
+
 
 
 
@@ -48,7 +50,8 @@ BALE_KEYBOARD = {
         [{"text": "دریافت لینک"}],
         [{"text": "تغییر لینک و قطع اتصال"}],
         [{"text": "اشتراک من"}],
-        [{"text": "حذف اتومات"}]   # ✔ جدید
+        [{"text": "حذف اتومات"}],   # ✔ جدید
+        [{"text": "🚪 خروج از اشتراک"}]
     ],
     "resize_keyboard": True
 }
@@ -417,6 +420,15 @@ def handle_bale_update(upd):
     # ✅ اجازه ارسال کلید همیشه وجود دارد
     # -----------------------------------------------
     if text.startswith("key_"):
+        # ❌ اگر لاگین است، اجازه ارسال کلید جدید ندارد
+        if user_has_valid_key(chat_id):
+            bale_send_text(
+                chat_id,
+                "⚠️ شما در حال حاضر لاگین هستید.\n\n"
+                "ابتدا از اشتراک فعلی خارج شوید، سپس کلید جدید را ارسال کنید.",
+                reply_markup=BALE_KEYBOARD
+            )
+            return
         success, message = join_key(text, chat_id)
     
         if not success:
@@ -425,6 +437,7 @@ def handle_bale_update(upd):
     
         # ✅ لاگین موفق
         bale_send_text(chat_id, "✅ وارد شدید، در حال آماده‌سازی...", reply_markup=BALE_KEYBOARD)
+        return
 
     # -----------------------------------------------
     # ❌ اگر لاگین نیست → قفل کامل + حذف دکمه‌ها
@@ -574,6 +587,11 @@ def handle_bale_update(upd):
     """
     
         bale_send_text(chat_id, text)
+        return
+
+    if text == "🚪 خروج از اشتراک":
+        success, msg_text = leave_key(chat_id)
+        bale_send_text(chat_id, msg_text, reply_markup={"remove_keyboard": True})
         return
     
     
