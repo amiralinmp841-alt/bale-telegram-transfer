@@ -264,13 +264,6 @@ def handle_telegram_update(upd):
     token = get_link_by_telegram(chat_id)
     pair = get_pair(token) if token else None
 
-    if not user_has_valid_key(chat_id):
-        telegram_send_message(
-            chat_id,
-            "❌ شما اشتراک فعالی در بله ندارید.\n"
-            "برای ادامه، لطفاً به یک اشتراک در بله وارد شوید!"
-        )
-        return  # ❌ جلو فوروارد را می‌گیرد
         
     if not pair or not pair["active"]:
         tg_send_text(chat_id, "❌ هنوز متصل نیستید.")
@@ -279,6 +272,15 @@ def handle_telegram_update(upd):
     bale_user = pair["bale_user_id"]
     caption = msg.get("caption")
 
+
+    if not user_has_valid_key(chat_id):
+        telegram_send_message(
+            chat_id,
+            "❌ شما اشتراک فعالی در بله ندارید.\n"
+            "برای ادامه، لطفاً به یک اشتراک در بله وارد شوید!"
+        )
+        return  # ❌ جلو فوروارد را می‌گیرد
+        
     # ------ TEXT ------
     if "text" in msg:
         resp = requests.post(
