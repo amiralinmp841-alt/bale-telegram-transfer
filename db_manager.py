@@ -304,17 +304,22 @@ def get_time_info(key):
 
     return total_days, remaining_days
 
-# db_manager.py
 def leave_key(user_id):
     db = load_db()
+    user_id = str(user_id)  # ✅ خیلی مهم
     changed = False
 
     for key in db.get("keys", {}).values():
-        if user_id in key.get("users", []):
-            key["users"].remove(user_id)
+        users = key.get("users", {})
+
+        if user_id in users:
+            users.pop(user_id)
+
+            # آزاد شدن ظرفیت
             key["used"] = max(0, key.get("used", 0) - 1)
+
             changed = True
-            break
+            break  # کاربر فقط یک کلید دارد
 
     if changed:
         save_db(db)
