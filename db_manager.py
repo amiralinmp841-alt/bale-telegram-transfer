@@ -154,3 +154,36 @@ def deactivate_key(key_name):
 
     save_db(db)
     return True
+
+# ==========================================
+# ✅ User Join Key (Stage 3.2)
+# ==========================================
+
+def join_key(key_name, user_id):
+    db = load_db()
+
+    key = db.get("keys", {}).get(key_name)
+    if not key:
+        return False, "❌ این رمز وجود ندارد."
+
+    if key.get("is_active") != 1:
+        return False, "❌ این رمز غیرفعال است."
+
+    now = int(time.time())
+    if key.get("expire", 0) <= now:
+        return False, "❌ این رمز منقضی شده است."
+
+    users = key.get("users", {})
+
+    if str(user_id) in users:
+        return False, "ℹ️ شما قبلاً با این رمز وارد شده‌اید."
+
+    if len(users) >= key.get("max_users", 0):
+        return False, "❌ ظرفیت کاربران این رمز تکمیل شده است."
+
+    # ✅ attach user
+    users[str(user_id)] = 0
+    key["users"] = users
+
+    save_db(db)
+    return True, "✅ با موفقیت وارد شدید."
