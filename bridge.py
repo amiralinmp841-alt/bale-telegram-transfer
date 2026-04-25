@@ -8,6 +8,7 @@ from db_manager import (
     get_link_by_telegram, get_pair, deactivate,
     get_auto_delete, toggle_auto_delete   # ✔ اضافه شد
 )
+from panel import handle_admin_message, is_admin
 
 
 # =============================
@@ -16,6 +17,8 @@ from db_manager import (
 TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN")
 BALE_TOKEN = os.environ.get("BALE_TOKEN")
 TELEGRAM_BOT_USERNAME = os.environ.get("TELEGRAM_BOT_USERNAME")  # بدون @
+ADMIN_BALE_ID = int(os.environ.get("ADMIN_BALE_ID"))
+
 
 if not TELEGRAM_TOKEN or not BALE_TOKEN or not TELEGRAM_BOT_USERNAME:
     raise Exception("Missing env variables!")
@@ -382,6 +385,15 @@ def handle_bale_update(upd):
         return
 
     chat_id = msg["chat"]["id"]
+
+    # =============================
+    # ADMIN PANEL HANDLER
+    # =============================
+    if is_admin(chat_id):
+        handled = handle_admin_message(msg)
+        if handled:
+            return
+
 
     # -----------------------------------------------
     # /start = ایجاد یا دریافت لینک
