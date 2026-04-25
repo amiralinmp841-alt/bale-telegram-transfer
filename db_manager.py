@@ -304,17 +304,19 @@ def get_time_info(key):
 
     return total_days, remaining_days
 
-def leave_key(bale_user_id):
-    for key_name, key in db.items():
-        if key.get("is_active") != 1:
-            continue
+# db_manager.py
+def leave_key(user_id):
+    db = load_db()
+    changed = False
 
-        users = key.get("users", {})
-        uid = str(bale_user_id)
+    for key in db.get("keys", {}).values():
+        if user_id in key.get("users", []):
+            key["users"].remove(user_id)
+            key["used"] = max(0, key.get("used", 0) - 1)
+            changed = True
+            break
 
-        if uid in users:
-            del users[uid]
-            key["users"] = users
-            return True, f"✅ از کلید {key_name} خارج شدید."
+    if changed:
+        save_db(db)
 
-    return False, "❌ شما عضو هیچ کلید فعالی نیستید."
+    return changed
