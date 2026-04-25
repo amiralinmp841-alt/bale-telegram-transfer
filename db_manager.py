@@ -1,189 +1,236 @@
-import json
+# panel.py
 import os
-import uuid
+import re
 import time
+import requests
+from db_manager import key_exists, add_key, get_active_keys, deactivate_key
 
-DB_PATH = "data/db.json"
+ADMIN_BALE_ID = int(os.environ.get("ADMIN_BALE_ID"))
+BALE_TOKEN = os.environ.get("BALE_TOKEN")
+BALE_API = f"https://tapi.bale.ai/bot{BALE_TOKEN}/"
+
+# =============================
+# Keyboards
+# =============================
+
+ADMIN_MAIN_KEYBOARD = {
+    "keyboard": [
+        [{"text": "مدیریت رمز ها"}],
+        [{"text": "مدیریت کاربران"}]
+    ],
+    "resize_keyboard": True
+}
+
+ADMIN_KEYS_KEYBOARD = {
+    "keyboard": [
+        [{"text": "افزودن رمز"}],
+        [{"text": "حذف رمز"}],
+        [{"text": "رمز های فعال"}],
+        [{"text": "رمز های غیر فعال"}],
+        [{"text": "بازگشت"}]
+    ],
+    "resize_keyboard": True
+}
+
+# =============================
+# FSM STATE
+# =============================
+
+ADMIN_STATES = {}  # {admin_id: {"step": ..., "data": {...}}}
+
+# =============================
+# Utils
+# =============================
+
+def is_admin(user_id):
+    return user_id == ADMIN_BALE_ID
 
 
-def load_db():
-    os.makedirs("data", exist_ok=True)
-    if not os.path.exists(DB_PATH):
-        save_db({
-            "links": {},
-            "bale_users": {},
-            "tg_users": {},
-            "keys": {}          # ✅ اضافه شد
-        })
-    with open(DB_PATH, "r", encoding="utf-8") as f:
-        return json.load(f)
+def send(chat_id, text, keyboard=None):
+    payload = {"chat_id": chat_id, "text": text}
+    if keyboard:
+        payload["reply_markup"] = keyboard
+    requests.post(BALE_API + "sendMessage", json=payload)
 
 
-def save_db(db):
-    with open(DB_PATH, "w", encoding="utf-8") as f:
-        json.dump(db, f, ensure_ascii=False, indent=2)
+# =============================
+# Data Store (temporary)
+# =============================
+# 🔴 فعلاً در حافظه — در مرحله‌های بعدی میره DB + بکاپ
 
+#KEYS = {}  
+# structure:
+# key_name: {
+#   volume: int,
+#   expire: int,
+#   max_users: int,
+#   created_at: int
+# }
 
-def generate_token():
-    return "BRIDGE-" + uuid.uuid4().hex[:12]
+# =============================
+# Admin Handler
+# =============================
 
+def handle_admin_message(msg):
+    chat_id = msg["chat"]["id"]
+    text = msg.get("text", "").strip()
 
-def create_link_for_bale(bale_user_id):
-    db = load_db()
-    token = generate_token()
-
-    db["links"][token] = {
-        "bale_user_id": bale_user_id,
-        "tg_user_id": None,
-        "active": True,
-        "auto_delete": 0   # ✔ اضافه شد
-    }
-    db["bale_users"][str(bale_user_id)] = token
-
-    save_db(db)
-    return token
-
-
-def activate_link(token, tg_user_id):
-    db = load_db()
-    if token not in db["links"]:
+    if not is_admin(chat_id):
         return False
 
-    db["links"][token]["tg_user_id"] = tg_user_id
-    db["links"][token]["active"] = True
-    db["tg_users"][str(tg_user_id)] = token
+    state = ADMIN_STATES.get(chat_id)
 
-    save_db(db)
+    # ==================================
+    # FSM STEPS
+    # ==================================
+
+    if state:
+        step = state["step"]
+
+        # -------- Step 1: Key Name --------
+        if step == "WAIT_KEY_NAME":
+            if not re.match(r"^key_[a-zA-Z0-9]{5,}$", text):
+                send(chat_id, "❌ فرمت کلید اشتباه است\nمثال: key_abc123")
+                return True
+
+            if key_exists(text):
+                send(chat_id, "❌ این کلید قبلاً وجود دارد")
+                return True
+            
+            state["data"]["key"] = text
+            state["step"] = "WAIT_VOLUME"
+            send(chat_id, "📦 حجم مجاز را وارد کنید (MB)")
+            return True
+
+        # -------- Step 2: Volume --------
+        if step == "WAIT_VOLUME":
+            if not text.isdigit():
+                send(chat_id, "❌ فقط عدد وارد کنید (MB)")
+                return True
+
+            state["data"]["volume"] = int(text)
+            state["step"] = "WAIT_EXPIRE"
+            send(chat_id, "⏳ مدت انقضا را وارد کنید (ساعت)")
+            return True
+
+        # -------- Step 3: Expire --------
+        if step == "WAIT_EXPIRE":
+            if not text.isdigit():
+                send(chat_id, "❌ فقط عدد وارد کنید (ساعت)")
+                return True
+
+            hours = int(text)
+            state["data"]["expire"] = int(time.time()) + hours * 3600
+            state["step"] = "WAIT_MAX_USERS"
+            send(chat_id, "👥 تعداد کاربران مجاز را وارد کنید")
+            return True
+
+        # -------- Step 4: Max Users --------
+        if step == "WAIT_MAX_USERS":
+            if not text.isdigit():
+                send(chat_id, "❌ فقط عدد وارد کنید")
+                return True
+
+            data = state["data"]
+
+            add_key(
+                data["key"],
+                data["volume"],
+                data["expire"],
+                int(text)
+            )
+            
+
+            ADMIN_STATES.pop(chat_id)
+
+            send(
+                chat_id,
+                f"✅ رمز ساخته شد:\n\n"
+                f"🔑 {data['key']}\n"
+                f"📦 حجم: {data['volume']} MB\n"
+                f"⏳ انقضا: {int((data['expire'] - time.time())/3600)} ساعت\n"
+                f"👥 کاربران: {text}",
+                ADMIN_KEYS_KEYBOARD
+            )
+            return True
+
+    # ==================================
+    # Normal Admin Commands
+    # ==================================
+
+    if text == "/start":
+        send(chat_id, "✅ به پنل مدیریت خوش آمدید", ADMIN_MAIN_KEYBOARD)
+        return True
+
+    if text == "مدیریت رمز ها":
+        send(chat_id, "🔐 مدیریت رمز ها", ADMIN_KEYS_KEYBOARD)
+        return True
+
+    if text == "افزودن رمز":
+        ADMIN_STATES[chat_id] = {"step": "WAIT_KEY_NAME", "data": {}}
+        send(chat_id, "🔑 نام رمز را وارد کنید\nمثال: key_abc123")
+        return True
+
+    if text == "بازگشت":
+        ADMIN_STATES.pop(chat_id, None)
+        send(chat_id, "بازگشت به منوی اصلی", ADMIN_MAIN_KEYBOARD)
+        return True
+
+    # ✅ نمایش رمز های فعال
+    if text == "رمز های فعال":
+        active_keys = get_active_keys()
+
+        if not active_keys:
+            send(chat_id, "ℹ️ هیچ رمز فعالی وجود ندارد.", ADMIN_KEYS_KEYBOARD)
+            return True
+
+        now = int(time.time())
+        message_parts = ["🔑 رمز های فعال:\n"]
+
+        for key_name, info in active_keys.items():
+            expire_ts = info.get("expire", 0)
+            remaining = expire_ts - now
+
+            # محاسبه زمان باقی‌مانده
+            if remaining <= 0:
+                time_left = "منقضی شده"
+            else:
+                days = remaining // 86400
+                hours = (remaining % 86400) // 3600
+                minutes = (remaining % 3600) // 60
+
+                time_left = ""
+                if days:
+                    time_left += f"{days} روز "
+                if hours:
+                    time_left += f"{hours} ساعت "
+                if minutes:
+                    time_left += f"{minutes} دقیقه"
+
+            volume_limit = info.get("volume", 0)
+            max_users = info.get("max_users", 0)
+            users = info.get("users", {})
+
+            active_users = len(users)
+            total_used = sum(users.values()) if users else 0
+
+            message_parts.append(
+                f"\n🔑 {key_name}\n"
+                f"⏳ زمان باقی‌مانده: {time_left}\n"
+                f"📦 حجم کل: {volume_limit} MB\n"
+                f"👥 کاربران: {active_users}/{max_users}\n"
+                f"📊 مصرف کل: {total_used} MB\n"
+                f"👤 کاربران متصل:"
+            )
+
+            if users:
+                for user_id, used in users.items():
+                    message_parts.append(f"  • user_{user_id}: {used} MB")
+            else:
+                message_parts.append("  • هیچ کاربری متصل نیست")
+
+        send(chat_id, "\n".join(message_parts), ADMIN_KEYS_KEYBOARD)
+        return True
+
+    # سایر دکمه‌ها فعلاً ignore
     return True
-
-
-def get_link_by_bale(bale_user_id):
-    db = load_db()
-    return db["bale_users"].get(str(bale_user_id))
-
-
-def get_link_by_telegram(tg_user_id):
-    db = load_db()
-    return db["tg_users"].get(str(tg_user_id))
-
-
-def get_pair(token):
-    db = load_db()
-    return db["links"].get(token)
-
-
-def deactivate(token):
-    db = load_db()
-    if token not in db["links"]:
-        return False
-
-    pair = db["links"][token]
-    pair["active"] = False
-
-    if pair["bale_user_id"]:
-        db["bale_users"].pop(str(pair["bale_user_id"]), None)
-    if pair["tg_user_id"]:
-        db["tg_users"].pop(str(pair["tg_user_id"]), None)
-
-    save_db(db)
-    return True
-
-
-# ------------------------------------------
-# ✔ قابلیت جدید: Auto Delete
-# ------------------------------------------
-
-def get_auto_delete(token):
-    db = load_db()
-    if token not in db["links"]:
-        return 0
-    return db["links"][token].get("auto_delete", 0)
-
-
-def toggle_auto_delete(token):
-    db = load_db()
-    if token not in db["links"]:
-        return 0
-
-    current = db["links"][token].get("auto_delete", 0)
-    new_val = 0 if current == 1 else 1
-    db["links"][token]["auto_delete"] = new_val
-
-    save_db(db)
-    return new_val
-
-# ==========================================
-# ✅ Key Management (Admin Panel)
-# ==========================================
-
-def key_exists(key_name):
-    db = load_db()
-    return key_name in db.get("keys", {})
-
-
-def add_key(key_name, volume, expire, max_users):
-    db = load_db()
-
-    db["keys"][key_name] = {
-        "volume": volume,
-        "expire": expire,
-        "max_users": max_users,
-        "created_at": int(time.time()),
-        "is_active": 1,
-        "users": {}   # user_id: used_volume
-    }
-
-    save_db(db)
-
-
-def get_active_keys():
-    db = load_db()
-    return {
-        k: v for k, v in db.get("keys", {}).items()
-        if v.get("is_active") == 1
-    }
-
-
-def deactivate_key(key_name):
-    db = load_db()
-    if key_name not in db.get("keys", {}):
-        return False
-
-    db["keys"][key_name]["is_active"] = 0
-    db["keys"][key_name]["users"] = {}  # ⛔ خروج همه کاربران
-
-    save_db(db)
-    return True
-
-# ==========================================
-# ✅ User Join Key (Stage 3.2)
-# ==========================================
-
-def join_key(key_name, user_id):
-    db = load_db()
-
-    key = db.get("keys", {}).get(key_name)
-    if not key:
-        return False, "❌ این رمز وجود ندارد."
-
-    if key.get("is_active") != 1:
-        return False, "❌ این رمز غیرفعال است."
-
-    now = int(time.time())
-    if key.get("expire", 0) <= now:
-        return False, "❌ این رمز منقضی شده است."
-
-    users = key.get("users", {})
-
-    if str(user_id) in users:
-        return False, "ℹ️ شما قبلاً با این رمز وارد شده‌اید."
-
-    if len(users) >= key.get("max_users", 0):
-        return False, "❌ ظرفیت کاربران این رمز تکمیل شده است."
-
-    # ✅ attach user
-    users[str(user_id)] = 0
-    key["users"] = users
-
-    save_db(db)
-    return True, "✅ با موفقیت وارد شدید."
