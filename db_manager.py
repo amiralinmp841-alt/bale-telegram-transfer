@@ -1,4 +1,4 @@
-#db_manager.py
+#db_manager.py #db_manager.py #db_manager.py #db_manager.py #db_manager.py #db_manager.py #db_manager.py #db_manager.py #db_manager.py 
 import json
 import os
 import uuid
@@ -147,11 +147,32 @@ def get_active_keys():
 
 def deactivate_key(key_name):
     db = load_db()
-    if key_name not in db.get("keys", {}):
+
+    key = db.get("keys", {}).get(key_name)
+    if not key:
         return False
 
-    db["keys"][key_name]["is_active"] = 0
-    db["keys"][key_name]["users"] = {}  # ⛔ خروج همه کاربران
+    # تمام کاربران متصل به این key
+    users = list(key.get("users", {}).keys())
+
+    # غیرفعال کردن key
+    key["is_active"] = 0
+    key["users"] = {}
+
+    # ⛔ cascade: قطع لینک همه کاربران
+    for bale_user_id in users:
+        token = db["bale_users"].pop(str(bale_user_id), None)
+        if not token:
+            continue
+
+        pair = db["links"].get(token)
+        if not pair:
+            continue
+
+        pair["active"] = False
+
+        if pair.get("tg_user_id"):
+            db["tg_users"].pop(str(pair["tg_user_id"]), None)
 
     save_db(db)
     return True
