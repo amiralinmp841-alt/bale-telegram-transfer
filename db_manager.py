@@ -245,3 +245,26 @@ def get_inactive_keys():
         k: v for k, v in db.get("keys", {}).items()
         if v.get("is_active") == 0
     }
+
+
+def add_user_volume(bale_user_id, used_bytes):
+    """
+    used_bytes: حجم واقعی بر حسب بایت
+    """
+    db = load_db()
+    used_mb = used_bytes / (1024 * 1024)
+
+    for key in db.get("keys", {}).values():
+        if key.get("is_active") != 1:
+            continue
+
+        users = key.get("users", {})
+        uid = str(bale_user_id)
+
+        if uid in users:
+            users[uid] = round(users.get(uid, 0) + used_mb, 2)
+            key["users"] = users
+            save_db(db)
+            return True
+
+    return False
