@@ -1,3 +1,4 @@
+#bridge.py
 import os
 import requests
 import time
@@ -10,6 +11,8 @@ from db_manager import (
 )
 from panel import handle_admin_message, is_admin
 from db_manager import join_key
+from telegram import ReplyKeyboardRemove
+from db_manager import user_has_valid_key
 
 
 # =============================
@@ -376,6 +379,7 @@ def handle_telegram_update(upd):
         tg_send_text(chat_id, "❌ ارسال فایل به بله ناموفق بود. احتمالاً حجم بیش از حد است.")
     
 
+
 # =============================
 # BALE HANDLER
 # =============================
@@ -386,6 +390,7 @@ def handle_bale_update(upd):
         return
 
     chat_id = msg["chat"]["id"]
+    text = msg.get("text", "").strip()
 
     # =============================
     # ADMIN PANEL HANDLER
@@ -396,20 +401,34 @@ def handle_bale_update(upd):
             return
 
     # -----------------------------------------------
-    # ✅ Stage 3.2: Join with Key
+    # ✅ اجازه ارسال کلید همیشه وجود دارد
     # -----------------------------------------------
-    if "text" in msg and msg["text"].startswith("key_"):
-        key_name = msg["text"].strip()
-
-        success, message = join_key(key_name, chat_id)
+    if text.startswith("key_"):
+        success, message = join_key(text, chat_id)
         bale_send_text(chat_id, message)
         return
 
     # -----------------------------------------------
+    # ❌ اگر لاگین نیست → قفل کامل + حذف دکمه‌ها
+    # -----------------------------------------------
+    if not user_has_valid_key(chat_id):
+        bale_send_text(
+            chat_id,
+            "🔐 ابتدا کلید اشتراکت را ارسال کن.\n\n"
+            "مثال:\n"
+            "key_abc123",
+            reply_markup=ReplyKeyboardRemove()
+        )
+        return
+
+    # ===============================================
+    # ✅ از اینجا به بعد: کاربر لاگین است
+    # ===============================================
+
+    # -----------------------------------------------
     # /start = ایجاد یا دریافت لینک
     # -----------------------------------------------
-    if "text" in msg and msg["text"] == "/start":
-
+    if text == "/start":
         token = get_link_by_bale(chat_id)
         if not token:
             token = create_link_for_bale(chat_id)
