@@ -308,7 +308,6 @@ def leave_key(user_id):
     db = load_db()
     user_id = str(user_id)
     changed = False
-    new_token = None
 
     # ----------------------------------
     # 1️⃣ حذف کاربر از کلید اشتراک
@@ -320,29 +319,27 @@ def leave_key(user_id):
             users.pop(user_id)
             key["used"] = max(0, key.get("used", 0) - 1)
             changed = True
-            break
+            break  # کاربر فقط یک کلید دارد
 
     # ----------------------------------
-    # 2️⃣ منسوخ کردن لینک قبلی
+    # 2️⃣ منسوخ کردن لینک اتصال (دقیقاً مثل تغییر لینک)
     # ----------------------------------
     old_token = get_link_by_bale(user_id)
 
     if old_token:
         pair = get_pair(old_token)
-        deactivate(old_token)
+        deactivate(old_token)  # 🔥 لینک کاملاً می‌سوزد
 
+        # پیام به تلگرام
         if pair and pair.get("tg_user_id"):
             tg_send_text(
                 pair["tg_user_id"],
-                "❌ اتصال توسط بله قطع شد."
+                "❌ از اشتراک خود در بله خارج شدید و ارتباط شما با بله، قطع شد!"
             )
 
-        # ----------------------------------
-        # 3️⃣ ساخت لینک جدید
-        # ----------------------------------
-        new_token = create_link_for_bale(user_id)
+        changed = True  # حتی اگر کلید نداشت، اتصال قطع شده
 
-    if changed or old_token:
+    if changed:
         save_db(db)
 
-    return changed, new_token
+    return changed
