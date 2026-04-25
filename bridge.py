@@ -9,6 +9,7 @@ from db_manager import (
     get_auto_delete, toggle_auto_delete   # ✔ اضافه شد
 )
 from panel import handle_admin_message, is_admin
+from db_manager import join_key
 
 
 # =============================
@@ -394,6 +395,15 @@ def handle_bale_update(upd):
         if handled:
             return
 
+    # -----------------------------------------------
+    # ✅ Stage 3.2: Join with Key
+    # -----------------------------------------------
+    if "text" in msg and msg["text"].startswith("key_"):
+        key_name = msg["text"].strip()
+
+        success, message = join_key(key_name, chat_id)
+        bale_send_text(chat_id, message)
+        return
 
     # -----------------------------------------------
     # /start = ایجاد یا دریافت لینک
