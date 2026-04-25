@@ -525,19 +525,25 @@ def handle_bale_update(upd):
     
         user_used = round(key["users"].get(str(chat_id), 0), 2)
     
-        # -------- زمان --------
-        total_days, remaining_days = get_time_info(key)
+        # -------- زمان (دقیقاً مثل ادمین) --------
+        now = int(time.time())
+        expire_ts = key.get("expire", 0)
+        remaining = expire_ts - now
     
-        # تبدیل روز اعشاری به روز / ساعت / دقیقه (inline)
-        total_minutes = int(total_days * 24 * 60)
-        td = total_minutes // (24 * 60)
-        th = (total_minutes % (24 * 60)) // 60
-        tm = total_minutes % 60
+        if remaining <= 0:
+            time_left = "منقضی شده"
+        else:
+            days = remaining // 86400
+            hours = (remaining % 86400) // 3600
+            minutes = (remaining % 3600) // 60
     
-        remaining_minutes = int(remaining_days * 24 * 60)
-        rd = remaining_minutes // (24 * 60)
-        rh = (remaining_minutes % (24 * 60)) // 60
-        rm = remaining_minutes % 60
+            time_left = ""
+            if days:
+                time_left += f"{days} روز "
+            if hours:
+                time_left += f"{hours} ساعت "
+            if minutes:
+                time_left += f"{minutes} دقیقه"
     
         # -------- کاربران --------
         current_users = len(key.get("users", {}))
@@ -558,8 +564,7 @@ def handle_bale_update(upd):
     • {user_used} mb
     
     ⏳ **زمان اشتراک**
-    • مدت کل: {td} روز {th} ساعت {tm} دقیقه
-    • ⌛ باقی‌مانده: {rd} روز {rh} ساعت {rm} دقیقه
+    • ⌛ باقی‌مانده: {time_left}
     
     👥 **کاربران**
     • کاربران متصل: {current_users}
