@@ -1,4 +1,4 @@
-#bridge.py
+#bridge.py #bridge.py #bridge.py #bridge.py #bridge.py #bridge.py #bridge.py #bridge.py #bridge.py #bridge.py #bridge.py #bridge.py 
 import os
 import requests
 import time
@@ -12,6 +12,8 @@ from db_manager import (
 from panel import handle_admin_message, is_admin
 from db_manager import join_key
 from db_manager import user_has_valid_key
+from db_manager import add_user_volume
+
 
 
 # =============================
@@ -270,6 +272,10 @@ def handle_telegram_update(upd):
             BALE_API + "sendMessage",
             json={"chat_id": bale_user, "text": msg["text"], "reply_markup": BALE_KEYBOARD}
         ).json()
+
+        # 📊 ثبت مصرف حجم (متن)
+        text_bytes = len(msg["text"].encode("utf-8"))
+        add_user_volume(bale_user, text_bytes)
     
         # ✔ Auto Delete
         if get_auto_delete(token) == 1:
@@ -319,6 +325,9 @@ def handle_telegram_update(upd):
     
         file_path = file_info["file_path"]
         file_bytes = requests.get(TG_FILE + file_path).content
+        # 📊 ثبت مصرف حجم فایل
+        add_user_volume(bale_user, len(file_bytes))
+        
     
         resp = None
     
@@ -514,6 +523,8 @@ def handle_bale_update(upd):
     # ------ TEXT ------
     if "text" in msg:
         tg_send_text(tg_user, msg["text"])
+        text_bytes = len(msg["text"].encode("utf-8"))
+        add_user_volume(chat_id, text_bytes)
         return
 
     # ------ FILE ------
@@ -560,6 +571,7 @@ def handle_bale_update(upd):
     
         file_url = f"https://tapi.bale.ai/file/bot{BALE_TOKEN}/{file_path}"
         file_bytes = requests.get(file_url).content
+        add_user_volume(chat_id, len(file_bytes))
     
         if file_type == "photo":
             tg_send_photo(tg_user, file_bytes, caption)
