@@ -1,6 +1,7 @@
 import json
 import os
 import uuid
+import time
 
 DB_PATH = "data/db.json"
 
@@ -8,8 +9,12 @@ DB_PATH = "data/db.json"
 def load_db():
     os.makedirs("data", exist_ok=True)
     if not os.path.exists(DB_PATH):
-        # نسخه اولیه دیتابیس با فیلد auto_delete
-        save_db({"links": {}, "bale_users": {}, "tg_users": {}})
+        save_db({
+            "links": {},
+            "bale_users": {},
+            "tg_users": {},
+            "keys": {}          # ✅ اضافه شد
+        })
     with open(DB_PATH, "r", encoding="utf-8") as f:
         return json.load(f)
 
@@ -106,3 +111,46 @@ def toggle_auto_delete(token):
 
     save_db(db)
     return new_val
+
+# ==========================================
+# ✅ Key Management (Admin Panel)
+# ==========================================
+
+def key_exists(key_name):
+    db = load_db()
+    return key_name in db.get("keys", {})
+
+
+def add_key(key_name, volume, expire, max_users):
+    db = load_db()
+
+    db["keys"][key_name] = {
+        "volume": volume,
+        "expire": expire,
+        "max_users": max_users,
+        "created_at": int(time.time()),
+        "is_active": 1,
+        "users": {}   # user_id: used_volume
+    }
+
+    save_db(db)
+
+
+def get_active_keys():
+    db = load_db()
+    return {
+        k: v for k, v in db.get("keys", {}).items()
+        if v.get("is_active") == 1
+    }
+
+
+def deactivate_key(key_name):
+    db = load_db()
+    if key_name not in db.get("keys", {}):
+        return False
+
+    db["keys"][key_name]["is_active"] = 0
+    db["keys"][key_name]["users"] = {}  # ⛔ خروج همه کاربران
+
+    save_db(db)
+    return True
