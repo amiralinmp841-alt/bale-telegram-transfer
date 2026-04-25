@@ -1,4 +1,4 @@
-# panel.py
+# panel.py # panel.py # panel.py # panel.py # panel.py # panel.py # panel.py # panel.py # panel.py # panel.py 
 import os
 import re
 import time
@@ -79,6 +79,22 @@ def handle_admin_message(msg):
         return False
 
     state = ADMIN_STATES.get(chat_id)
+
+    if step == "WAIT_DELETE_KEY":
+        if not key_exists(text):
+            send(chat_id, "❌ چنین رمی وجود ندارد", ADMIN_KEYS_KEYBOARD)
+            ADMIN_STATES.pop(chat_id, None)
+            return True
+    
+        deactivate_key(text)
+        ADMIN_STATES.pop(chat_id, None)
+    
+        send(
+            chat_id,
+            f"✅ رمز {text} حذف شد\n👥 تمام کاربران آن خارج شدند",
+            ADMIN_KEYS_KEYBOARD
+        )
+        return True
 
     # ==================================
     # FSM STEPS
@@ -171,11 +187,11 @@ def handle_admin_message(msg):
         send(chat_id, "🔑 نام رمز را وارد کنید\nمثال: key_abc123")
         return True
 
-    if text == "بازگشت":
-        ADMIN_STATES.pop(chat_id, None)
-        send(chat_id, "بازگشت به منوی اصلی", ADMIN_MAIN_KEYBOARD)
+    if text == "حذف رمز":
+        ADMIN_STATES[chat_id] = {"step": "WAIT_DELETE_KEY", "data": {}}
+        send(chat_id, "🗑 نام رمز موردنظر برای حذف را وارد کنید\nمثال: key_abc123")
         return True
-
+    
     # ✅ نمایش رمز های فعال
     if text == "رمز های فعال":
         active_keys = get_active_keys()
@@ -230,6 +246,11 @@ def handle_admin_message(msg):
                 message_parts.append("  • هیچ کاربری متصل نیست")
 
         send(chat_id, "\n".join(message_parts), ADMIN_KEYS_KEYBOARD)
+        return True
+
+    if text == "بازگشت":
+        ADMIN_STATES.pop(chat_id, None)
+        send(chat_id, "بازگشت به منوی اصلی", ADMIN_MAIN_KEYBOARD)
         return True
 
     # سایر دکمه‌ها فعلاً ignore
