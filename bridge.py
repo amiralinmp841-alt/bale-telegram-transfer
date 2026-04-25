@@ -405,13 +405,12 @@ def handle_bale_update(upd):
     if text.startswith("key_"):
         success, message = join_key(text, chat_id)
     
-        if success:
-            bale_send_text(chat_id, message, reply_markup=BALE_KEYBOARD)
-        else:
+        if not success:
             bale_send_text(chat_id, message, reply_markup={"remove_keyboard": True})
+            return
     
-        return
-    
+        # ✅ لاگین موفق
+        bale_send_text(chat_id, "✅ وارد شدید، در حال آماده‌سازی...", reply_markup=BALE_KEYBOARD)
 
     # -----------------------------------------------
     # ❌ اگر لاگین نیست → قفل کامل + حذف دکمه‌ها
