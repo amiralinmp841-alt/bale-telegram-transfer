@@ -180,9 +180,9 @@ def deactivate_key(key_name):
 # ==========================================
 # ✅ User Join Key (Stage 3.2)
 # ==========================================
-
 def join_key(key_name, user_id):
     db = load_db()
+    user_id = str(user_id)
 
     key = db.get("keys", {}).get(key_name)
     if not key:
@@ -195,20 +195,55 @@ def join_key(key_name, user_id):
     if key.get("expire", 0) <= now:
         return False, "❌ این رمز منقضی شده است."
 
-    users = key.get("users", {})
+    users = key.setdefault("users", {})
 
-    if str(user_id) in users:
+    # -------------------------------
+    # محاسبه کاربران فعال
+    # -------------------------------
+    active_count = 0
+    for u in users.values():
+        if isinstance(u, dict):
+            if u.get("active") is True:
+                active_count += 1
+        else:
+            active_count += 1  # دیتای قدیمی = فعال
+
+    # -------------------------------
+    # کاربر قبلاً بوده
+    # -------------------------------
+    if user_id in users:
+        u = users[user_id]
+
+        # ساختار جدید
+        if isinstance(u, dict):
+            if u.get("active") is True:
+                return False, "ℹ️ شما قبلاً با این رمز وارد شده‌اید."
+            else:
+                # ✅ ورود مجدد
+                u["active"] = True
+                save_db(db)
+                return True, "✅ دوباره با موفقیت وارد شدید."
+
+        # ساختار قدیمی (عدد مصرف)
         return False, "ℹ️ شما قبلاً با این رمز وارد شده‌اید."
 
-    if len(users) >= key.get("max_users", 0):
+    # -------------------------------
+    # بررسی ظرفیت
+    # -------------------------------
+    if active_count >= key.get("max_users", 0):
         return False, "❌ ظرفیت کاربران این رمز تکمیل شده است."
 
-    # ✅ attach user
-    users[str(user_id)] = 0
-    key["users"] = users
+    # -------------------------------
+    # ✅ ورود جدید
+    # -------------------------------
+    users[user_id] = {
+        "used": 0,
+        "active": True
+    }
 
     save_db(db)
     return True, "✅ با موفقیت وارد شدید."
+
 
 def user_has_valid_key(bale_user_id):
     db = load_db()
