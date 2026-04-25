@@ -1,105 +1,115 @@
 # panel.py
 import os
-from bale import InlineKeyboardMarkup, InlineKeyboardButton
+import requests
 
-# =====================
-# Admin Config
-# =====================
-ADMIN_BALE_ID = int(os.environ.get("ADMIN_BALE_ID", 0))
+ADMIN_BALE_ID = int(os.environ.get("ADMIN_BALE_ID"))
+
+BALE_TOKEN = os.environ.get("BALE_TOKEN")
+BALE_API = f"https://tapi.bale.ai/bot{BALE_TOKEN}/"
 
 
-# =====================
+# =============================
+# Keyboards
+# =============================
+
+ADMIN_MAIN_KEYBOARD = {
+    "keyboard": [
+        [{"text": "مدیریت رمز ها"}],
+        [{"text": "مدیریت کاربران"}]
+    ],
+    "resize_keyboard": True
+}
+
+ADMIN_KEYS_KEYBOARD = {
+    "keyboard": [
+        [{"text": "افزودن رمز"}],
+        [{"text": "حذف رمز"}],
+        [{"text": "رمز های فعال"}],
+        [{"text": "رمز های غیر فعال"}],
+        [{"text": "بازگشت"}]
+    ],
+    "resize_keyboard": True
+}
+
+
+# =============================
 # Utils
-# =====================
-def is_admin(user_id: int) -> bool:
+# =============================
+
+def is_admin(user_id):
     return user_id == ADMIN_BALE_ID
 
 
-# =====================
-# Keyboards
-# =====================
-def admin_main_menu():
-    keyboard = [
-        [InlineKeyboardButton("مدیریت رمز ها", callback_data="admin_keys")],
-        [InlineKeyboardButton("مدیریت کاربران", callback_data="admin_users")]
-    ]
-    return InlineKeyboardMarkup(keyboard)
+def send_admin_message(chat_id, text, keyboard=None):
+    payload = {
+        "chat_id": chat_id,
+        "text": text
+    }
+
+    if keyboard:
+        payload["reply_markup"] = keyboard
+
+    requests.post(BALE_API + "sendMessage", json=payload)
 
 
-def admin_keys_menu():
-    keyboard = [
-        [InlineKeyboardButton("افزودن رمز", callback_data="key_add")],
-        [InlineKeyboardButton("حذف رمز", callback_data="key_remove")],
-        [InlineKeyboardButton("رمز های فعال", callback_data="key_active")],
-        [InlineKeyboardButton("رمز های غیر فعال", callback_data="key_inactive")]
-    ]
-    return InlineKeyboardMarkup(keyboard)
+# =============================
+# Admin Handler
+# =============================
 
+def handle_admin_message(msg):
+    chat_id = msg["chat"]["id"]
+    text = msg.get("text", "")
 
-# =====================
-# Handlers
-# =====================
-async def handle_start(bot, message):
-    user_id = message.from_user.id
+    if not is_admin(chat_id):
+        return False  # یعنی ادمین نیست
 
-    if not is_admin(user_id):
-        # فعلاً هیچ کاری برای یوزر عادی انجام نمی‌دهیم
-        await bot.send_message(
-            chat_id=user_id,
-            text="لطفاً رمز خود را جهت استفاده از ربات ارسال کنید."
+    # -------------------------
+    # /start
+    # -------------------------
+    if text == "/start":
+        send_admin_message(
+            chat_id,
+            "✅ به پنل مدیریت خوش آمدید",
+            ADMIN_MAIN_KEYBOARD
         )
-        return
+        return True
 
-    await bot.send_message(
-        chat_id=user_id,
-        text="✅ به پنل مدیریت خوش آمدید",
-        reply_markup=admin_main_menu()
-    )
-
-
-async def handle_admin_callbacks(bot, callback_query):
-    user_id = callback_query.from_user.id
-    data = callback_query.data
-
-    if not is_admin(user_id):
-        return
-
-    # ===== Main Menus =====
-    if data == "admin_keys":
-        await bot.edit_message_text(
-            chat_id=user_id,
-            message_id=callback_query.message.message_id,
-            text="🔐 مدیریت رمز ها",
-            reply_markup=admin_keys_menu()
+    # -------------------------
+    # مدیریت رمز ها
+    # -------------------------
+    if text == "مدیریت رمز ها":
+        send_admin_message(
+            chat_id,
+            "🔐 مدیریت رمز ها:",
+            ADMIN_KEYS_KEYBOARD
         )
+        return True
 
-    elif data == "admin_users":
-        await bot.answer_callback_query(
-            callback_query.id,
-            text="مدیریت کاربران بعداً اضافه می‌شود"
-        )
+    # -------------------------
+    # دکمه‌ها (فعلاً اسکلت)
+    # -------------------------
+    if text == "افزودن رمز":
+        send_admin_message(chat_id, "➕ بخش افزودن رمز بزودی فعال می‌شود")
+        return True
 
-    # ===== Key Management (Skeleton) =====
-    elif data == "key_add":
-        await bot.send_message(
-            chat_id=user_id,
-            text="➕ افزودن رمز (مرحله‌ای) — بزودی فعال می‌شود"
-        )
+    if text == "حذف رمز":
+        send_admin_message(chat_id, "➖ بخش حذف رمز بزودی فعال می‌شود")
+        return True
 
-    elif data == "key_remove":
-        await bot.send_message(
-            chat_id=user_id,
-            text="➖ حذف رمز — بزودی فعال می‌شود"
-        )
+    if text == "رمز های فعال":
+        send_admin_message(chat_id, "✅ نمایش رمز های فعال بزودی فعال می‌شود")
+        return True
 
-    elif data == "key_active":
-        await bot.send_message(
-            chat_id=user_id,
-            text="✅ لیست رمز های فعال — بزودی فعال می‌شود"
-        )
+    if text == "رمز های غیر فعال":
+        send_admin_message(chat_id, "⛔ این بخش فعلاً غیرفعال است")
+        return True
 
-    elif data == "key_inactive":
-        await bot.send_message(
-            chat_id=user_id,
-            text="⛔ رمز های غیر فعال — فعلاً غیرفعال است"
+    if text == "بازگشت":
+        send_admin_message(
+            chat_id,
+            "بازگشت به منوی اصلی",
+            ADMIN_MAIN_KEYBOARD
         )
+        return True
+
+    return True  # هر پیام ادمین هندل شود
