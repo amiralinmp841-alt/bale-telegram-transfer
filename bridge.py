@@ -11,7 +11,6 @@ from db_manager import (
 )
 from panel import handle_admin_message, is_admin
 from db_manager import join_key
-from telegram import ReplyKeyboardRemove
 from db_manager import user_has_valid_key
 
 
