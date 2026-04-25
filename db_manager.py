@@ -189,26 +189,31 @@ def join_key(key_name, user_id):
     save_db(db)
     return True, "✅ با موفقیت وارد شدید."
 
-def user_has_valid_key(user_id):
-    user = db["users"].get(user_id)
-    if not user:
-        return False
+def user_has_valid_key(bale_user_id):
+    db = load_db()
+    now = int(time.time())
 
-    key_code = user.get("active_key")
-    if not key_code:
-        return False
+    for key_name, key in db.get("keys", {}).items():
 
-    key = db["keys"].get(key_code)
-    if not key:
-        return False
+        if key.get("is_active") != 1:
+            continue
 
-    if not key.get("active"):
-        return False
+        if key.get("expire", 0) <= now:
+            key["is_active"] = 0
+            key["users"] = {}
 
-    if key.get("expired"):
-        return False
+            # ⛔ قطع همه لینک‌های مربوط
+            for token, pair in db.get("links", {}).items():
+                if pair.get("bale_user_id") == bale_user_id:
+                    pair["active"] = False
+                    if pair.get("tg_user_id"):
+                        db["tg_users"].pop(str(pair["tg_user_id"]), None)
+                    db["bale_users"].pop(str(bale_user_id), None)
 
-    if user_id not in key.get("users", []):
-        return False
+            save_db(db)
+            return False
 
-    return True
+        if str(bale_user_id) in key.get("users", {}):
+            return True
+
+    return False
