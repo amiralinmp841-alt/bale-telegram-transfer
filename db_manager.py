@@ -306,31 +306,30 @@ def get_time_info(key):
 
 def leave_key(user_id):
     db = load_db()
-    user_id = str(user_id)  # ✅ خیلی مهم
+    user_id = str(user_id)
     changed = False
 
+    # ----------------------------------
+    # 1️⃣ حذف از کلید اشتراک
+    # ----------------------------------
     for key in db.get("keys", {}).values():
         users = key.get("users", {})
 
         if user_id in users:
             users.pop(user_id)
-
-            # آزاد شدن ظرفیت
             key["used"] = max(0, key.get("used", 0) - 1)
-
             changed = True
-            break  # کاربر فقط یک کلید دارد
+            break
+
+    # ----------------------------------
+    # 2️⃣ منسوخ کردن Pair
+    # ----------------------------------
+    pair = db.get("pairs", {}).get(user_id)
+    if pair and pair.get("active"):
+        pair["active"] = False
+        changed = True
 
     if changed:
         save_db(db)
 
     return changed
-
-def was_user_in_any_key(user_id):
-    user_id = str(user_id)
-    db = load_db()
-
-    for key in db.get("keys", {}).values():
-        if user_id in key.get("users", {}):
-            return True
-    return False
