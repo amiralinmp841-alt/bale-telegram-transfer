@@ -325,3 +325,12 @@ def leave_key(user_id):
         save_db(db)
 
     return changed
+
+def was_user_in_any_key(user_id):
+    user_id = str(user_id)
+    db = load_db()
+
+    for key in db.get("keys", {}).values():
+        if user_id in key.get("users", {}):
+            return True
+    return False
