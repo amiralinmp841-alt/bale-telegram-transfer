@@ -303,3 +303,18 @@ def get_time_info(key):
     remaining_days = remaining // 86400
 
     return total_days, remaining_days
+
+def leave_key(bale_user_id):
+    for key_name, key in db.items():
+        if key.get("is_active") != 1:
+            continue
+
+        users = key.get("users", {})
+        uid = str(bale_user_id)
+
+        if uid in users:
+            del users[uid]
+            key["users"] = users
+            return True, f"✅ از کلید {key_name} خارج شدید."
+
+    return False, "❌ شما عضو هیچ کلید فعالی نیستید."
