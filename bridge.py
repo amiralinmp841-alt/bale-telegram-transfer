@@ -13,6 +13,7 @@ from panel import handle_admin_message, is_admin
 from db_manager import join_key
 from db_manager import user_has_valid_key
 from db_manager import add_user_volume
+from db_manager import get_user_key, get_key_used_volume, get_time_info
 
 
 
@@ -46,6 +47,7 @@ BALE_KEYBOARD = {
     "keyboard": [
         [{"text": "دریافت لینک"}],
         [{"text": "تغییر لینک و قطع اتصال"}],
+        [{"text": "اشتراک من"}],
         [{"text": "حذف اتومات"}]   # ✔ جدید
     ],
     "resize_keyboard": True
@@ -505,6 +507,59 @@ def handle_bale_update(upd):
             bale_send_text(chat_id, "حذف اتومات غیرفعال شد ✗")
 
         return
+
+    # -----------------------------------------------
+    # ✔ دکمه جدید: اشتراک من
+    # -----------------------------------------------
+    if "text" in msg and msg["text"] == "اشتراک من":
+        key_name, key = get_user_key(chat_id)
+    
+        if not key:
+            bale_send_text(chat_id, "❌ اشتراک فعالی برای شما یافت نشد.")
+            return
+    
+        # -------- حجم --------
+        total_volume = key.get("volume", 0)   # GB
+        used_volume = get_key_used_volume(key)
+        remaining_volume = round(max(0, total_volume - used_volume), 2)
+    
+        user_used = round(key["users"].get(str(chat_id), 0), 2)
+    
+        # -------- زمان --------
+        total_days, remaining_days = get_time_info(key)
+    
+        # -------- کاربران --------
+        current_users = len(key.get("users", {}))
+        max_users = key.get("max_users", 1)
+    
+        text = f"""
+    👤 **اشتراک من**
+    
+    🔑 **کلید:**
+    `{key_name}`
+    
+    📦 **حجم اشتراک**
+    • حجم کل: {total_volume} GB
+    • مصرف کل: {used_volume} GB
+    • 🔻 باقی‌مانده: {remaining_volume} GB
+    
+    👤 **مصرف شما**
+    • {user_used} GB
+    
+    ⏳ **زمان اشتراک**
+    • مدت کل: {total_days} روز
+    • ⌛ باقی‌مانده: {remaining_days} روز
+    
+    👥 **کاربران**
+    • کاربران متصل: {current_users}
+    • حداکثر مجاز: {max_users}
+    
+    🟢 **وضعیت:** فعال ✅
+    """
+    
+        bale_send_text(chat_id, text)
+        return
+    
     
     # -----------------------------------------------
     # ارسال پیام/فایل به تلگرام
