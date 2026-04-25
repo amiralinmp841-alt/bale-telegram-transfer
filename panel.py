@@ -3,6 +3,7 @@ import os
 import re
 import time
 import requests
+from db_manager import key_exists, add_key, get_active_keys, deactivate_key
 
 ADMIN_BALE_ID = int(os.environ.get("ADMIN_BALE_ID"))
 BALE_TOKEN = os.environ.get("BALE_TOKEN")
@@ -57,7 +58,7 @@ def send(chat_id, text, keyboard=None):
 # =============================
 # 🔴 فعلاً در حافظه — در مرحله‌های بعدی میره DB + بکاپ
 
-KEYS = {}  
+#KEYS = {}  
 # structure:
 # key_name: {
 #   volume: int,
@@ -92,10 +93,10 @@ def handle_admin_message(msg):
                 send(chat_id, "❌ فرمت کلید اشتباه است\nمثال: key_abc123")
                 return True
 
-            if text in KEYS:
+            if key_exists(text):
                 send(chat_id, "❌ این کلید قبلاً وجود دارد")
                 return True
-
+            
             state["data"]["key"] = text
             state["step"] = "WAIT_VOLUME"
             send(chat_id, "📦 حجم مجاز را وارد کنید (MB)")
@@ -132,12 +133,13 @@ def handle_admin_message(msg):
 
             data = state["data"]
 
-            KEYS[data["key"]] = {
-                "volume": data["volume"],
-                "expire": data["expire"],
-                "max_users": int(text),
-                "created_at": int(time.time())
-            }
+            add_key(
+                data["key"],
+                data["volume"],
+                data["expire"],
+                int(text)
+            )
+            
 
             ADMIN_STATES.pop(chat_id)
 
@@ -172,6 +174,62 @@ def handle_admin_message(msg):
     if text == "بازگشت":
         ADMIN_STATES.pop(chat_id, None)
         send(chat_id, "بازگشت به منوی اصلی", ADMIN_MAIN_KEYBOARD)
+        return True
+
+    # ✅ نمایش رمز های فعال
+    if text == "رمز های فعال":
+        active_keys = get_active_keys()
+
+        if not active_keys:
+            send(chat_id, "ℹ️ هیچ رمز فعالی وجود ندارد.", ADMIN_KEYS_KEYBOARD)
+            return True
+
+        now = int(time.time())
+        message_parts = ["🔑 رمز های فعال:\n"]
+
+        for key_name, info in active_keys.items():
+            expire_ts = info.get("expire", 0)
+            remaining = expire_ts - now
+
+            # محاسبه زمان باقی‌مانده
+            if remaining <= 0:
+                time_left = "منقضی شده"
+            else:
+                days = remaining // 86400
+                hours = (remaining % 86400) // 3600
+                minutes = (remaining % 3600) // 60
+
+                time_left = ""
+                if days:
+                    time_left += f"{days} روز "
+                if hours:
+                    time_left += f"{hours} ساعت "
+                if minutes:
+                    time_left += f"{minutes} دقیقه"
+
+            volume_limit = info.get("volume", 0)
+            max_users = info.get("max_users", 0)
+            users = info.get("users", {})
+
+            active_users = len(users)
+            total_used = sum(users.values()) if users else 0
+
+            message_parts.append(
+                f"\n🔑 {key_name}\n"
+                f"⏳ زمان باقی‌مانده: {time_left}\n"
+                f"📦 حجم کل: {volume_limit} MB\n"
+                f"👥 کاربران: {active_users}/{max_users}\n"
+                f"📊 مصرف کل: {total_used} MB\n"
+                f"👤 کاربران متصل:"
+            )
+
+            if users:
+                for user_id, used in users.items():
+                    message_parts.append(f"  • user_{user_id}: {used} MB")
+            else:
+                message_parts.append("  • هیچ کاربری متصل نیست")
+
+        send(chat_id, "\n".join(message_parts), ADMIN_KEYS_KEYBOARD)
         return True
 
     # سایر دکمه‌ها فعلاً ignore
