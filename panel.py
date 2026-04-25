@@ -3,7 +3,7 @@ import os
 import re
 import time
 import requests
-from db_manager import key_exists, add_key, get_active_keys, deactivate_key
+from db_manager import key_exists, add_key, get_active_keys, deactivate_key, get_inactive_keys
 
 ADMIN_BALE_ID = int(os.environ.get("ADMIN_BALE_ID"))
 BALE_TOKEN = os.environ.get("BALE_TOKEN")
@@ -247,6 +247,46 @@ def handle_admin_message(msg):
 
         send(chat_id, "\n".join(message_parts), ADMIN_KEYS_KEYBOARD)
         return True
+
+    # 🚫 نمایش رمز های غیر فعال
+    if text == "رمز های غیر فعال":
+        inactive_keys = get_inactive_keys()
+    
+        if not inactive_keys:
+            send(chat_id, "✅ هیچ رمز غیرفعالی وجود ندارد.", ADMIN_KEYS_KEYBOARD)
+            return True
+    
+        now = int(time.time())
+        message_parts = ["🚫 رمز های غیرفعال:\n"]
+    
+        for key_name, info in inactive_keys.items():
+            expire_ts = info.get("expire", 0)
+    
+            if expire_ts <= now:
+                expire_text = "⏳ منقضی شده"
+            else:
+                expire_text = "⛔ غیرفعال شده توسط ادمین"
+    
+            volume = info.get("volume", 0)
+            max_users = info.get("max_users", 0)
+            created_at = info.get("created_at", 0)
+    
+            created_time = time.strftime(
+                "%Y-%m-%d %H:%M",
+                time.localtime(created_at)
+            ) if created_at else "نامشخص"
+    
+            message_parts.append(
+                f"\n🔑 {key_name}\n"
+                f"{expire_text}\n"
+                f"📦 حجم کل: {volume} MB\n"
+                f"👥 حداکثر کاربران: {max_users}\n"
+                f"🕒 تاریخ ایجاد: {created_time}"
+            )
+    
+        send(chat_id, "\n".join(message_parts), ADMIN_KEYS_KEYBOARD)
+        return True
+    
 
     if text == "بازگشت":
         ADMIN_STATES.pop(chat_id, None)
