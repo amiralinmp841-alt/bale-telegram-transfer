@@ -80,22 +80,6 @@ def handle_admin_message(msg):
 
     state = ADMIN_STATES.get(chat_id)
 
-    if step == "WAIT_DELETE_KEY":
-        if not key_exists(text):
-            send(chat_id, "❌ چنین رمی وجود ندارد", ADMIN_KEYS_KEYBOARD)
-            ADMIN_STATES.pop(chat_id, None)
-            return True
-    
-        deactivate_key(text)
-        ADMIN_STATES.pop(chat_id, None)
-    
-        send(
-            chat_id,
-            f"✅ رمز {text} حذف شد\n👥 تمام کاربران آن خارج شدند",
-            ADMIN_KEYS_KEYBOARD
-        )
-        return True
-
     # ==================================
     # FSM STEPS
     # ==================================
@@ -166,6 +150,22 @@ def handle_admin_message(msg):
                 f"📦 حجم: {data['volume']} MB\n"
                 f"⏳ انقضا: {int((data['expire'] - time.time())/3600)} ساعت\n"
                 f"👥 کاربران: {text}",
+                ADMIN_KEYS_KEYBOARD
+            )
+            return True
+
+        if step == "WAIT_DELETE_KEY":
+            if not key_exists(text):
+                send(chat_id, "❌ چنین رمی وجود ندارد", ADMIN_KEYS_KEYBOARD)
+                ADMIN_STATES.pop(chat_id, None)
+                return True
+        
+            deactivate_key(text)
+            ADMIN_STATES.pop(chat_id, None)
+        
+            send(
+                chat_id,
+                f"✅ رمز {text} حذف شد\n👥 تمام کاربران آن خارج شدند",
                 ADMIN_KEYS_KEYBOARD
             )
             return True
