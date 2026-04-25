@@ -519,7 +519,7 @@ def handle_bale_update(upd):
             return
     
         # -------- حجم --------
-        total_volume = key.get("volume", 0)   # GB
+        total_volume = key.get("volume", 0)   # MB
         used_volume = get_key_used_volume(key)
         remaining_volume = round(max(0, total_volume - used_volume), 2)
     
@@ -527,6 +527,17 @@ def handle_bale_update(upd):
     
         # -------- زمان --------
         total_days, remaining_days = get_time_info(key)
+    
+        # تبدیل روز اعشاری به روز / ساعت / دقیقه (inline)
+        total_minutes = int(total_days * 24 * 60)
+        td = total_minutes // (24 * 60)
+        th = (total_minutes % (24 * 60)) // 60
+        tm = total_minutes % 60
+    
+        remaining_minutes = int(remaining_days * 24 * 60)
+        rd = remaining_minutes // (24 * 60)
+        rh = (remaining_minutes % (24 * 60)) // 60
+        rm = remaining_minutes % 60
     
         # -------- کاربران --------
         current_users = len(key.get("users", {}))
@@ -539,16 +550,16 @@ def handle_bale_update(upd):
     `{key_name}`
     
     📦 **حجم اشتراک**
-    • حجم کل: {total_volume} GB
-    • مصرف کل: {used_volume} GB
-    • 🔻 باقی‌مانده: {remaining_volume} GB
+    • حجم کل: {total_volume} mb
+    • مصرف کل: {used_volume} mb
+    • 🔻 باقی‌مانده: {remaining_volume} mb
     
     👤 **مصرف شما**
-    • {user_used} GB
+    • {user_used} mb
     
     ⏳ **زمان اشتراک**
-    • مدت کل: {total_days} روز
-    • ⌛ باقی‌مانده: {remaining_days} روز
+    • مدت کل: {td} روز {th} ساعت {tm} دقیقه
+    • ⌛ باقی‌مانده: {rd} روز {rh} ساعت {rm} دقیقه
     
     👥 **کاربران**
     • کاربران متصل: {current_users}
@@ -559,6 +570,7 @@ def handle_bale_update(upd):
     
         bale_send_text(chat_id, text)
         return
+    
     
     
     # -----------------------------------------------
