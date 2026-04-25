@@ -308,9 +308,10 @@ def leave_key(user_id):
     db = load_db()
     user_id = str(user_id)
     changed = False
+    new_token = None
 
     # ----------------------------------
-    # 1️⃣ حذف از کلید اشتراک
+    # 1️⃣ حذف کاربر از کلید اشتراک
     # ----------------------------------
     for key in db.get("keys", {}).values():
         users = key.get("users", {})
@@ -322,14 +323,26 @@ def leave_key(user_id):
             break
 
     # ----------------------------------
-    # 2️⃣ منسوخ کردن Pair
+    # 2️⃣ منسوخ کردن لینک قبلی
     # ----------------------------------
-    pair = db.get("pairs", {}).get(user_id)
-    if pair and pair.get("active"):
-        pair["active"] = False
-        changed = True
+    old_token = get_link_by_bale(user_id)
 
-    if changed:
+    if old_token:
+        pair = get_pair(old_token)
+        deactivate(old_token)
+
+        if pair and pair.get("tg_user_id"):
+            tg_send_text(
+                pair["tg_user_id"],
+                "❌ اتصال توسط بله قطع شد."
+            )
+
+        # ----------------------------------
+        # 3️⃣ ساخت لینک جدید
+        # ----------------------------------
+        new_token = create_link_for_bale(user_id)
+
+    if changed or old_token:
         save_db(db)
 
-    return changed
+    return changed, new_token
