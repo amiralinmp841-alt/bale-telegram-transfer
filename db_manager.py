@@ -250,21 +250,56 @@ def get_inactive_keys():
 def add_user_volume(bale_user_id, used_bytes):
     """
     used_bytes: حجم واقعی بر حسب بایت
+    حجم فقط به key فعال فعلی کاربر اضافه می‌شود
     """
+    key_name, key = get_user_key(bale_user_id)
+    if not key:
+        return False  # کاربر key فعال ندارد
+
     db = load_db()
     used_mb = used_bytes / (1024 * 1024)
+    uid = str(bale_user_id)
 
-    for key in db.get("keys", {}).values():
+    # ✅ آپدیت حجم فقط روی همان key
+    db["keys"][key_name]["users"][uid] = round(
+        db["keys"][key_name]["users"].get(uid, 0) + used_mb, 2
+    )
+
+    save_db(db)
+    return True
+
+
+# -----------------------------------------------
+# ✔ اشتراک کاربر
+# -----------------------------------------------
+def get_user_key(bale_user_id):
+    db = load_db()
+    uid = str(bale_user_id)
+
+    for key_name, key in db.get("keys", {}).items():
         if key.get("is_active") != 1:
             continue
+        if uid in key.get("users", {}):
+            return key_name, key
 
-        users = key.get("users", {})
-        uid = str(bale_user_id)
+    return None, None
 
-        if uid in users:
-            users[uid] = round(users.get(uid, 0) + used_mb, 2)
-            key["users"] = users
-            save_db(db)
-            return True
+def get_key_used_volume(key):
+    return round(sum(key.get("users", {}).values()), 2)
 
-    return False
+import time
+
+def get_time_info(key):
+    created = key.get("created_at")
+    expire = key.get("expire")
+
+    if not created or not expire:
+        return 0, 0
+
+    total_seconds = expire - created
+    total_days = total_seconds // 86400
+
+    remaining = max(0, expire - int(time.time()))
+    remaining_days = remaining // 86400
+
+    return total_days, remaining_days
