@@ -427,8 +427,7 @@ def handle_bale_update(upd):
             bale_send_text(
                 chat_id,
                 "✅ از اشتراک خارج شدید.\n"
-                "🔄 لینک اتصال شما تغییر کرد:\n"
-                f"{tg_link}"
+                "⚠️ لینک اتصال قبلی منسوخ شد!\n"
             )
         else:
             bale_send_text(chat_id, "⚠️ شما اشتراک فعالی نداشتید.")
