@@ -55,22 +55,6 @@ BALE_KEYBOARD = {
     "resize_keyboard": True
 }
 
-@bot.command("getdb")
-def get_db_cmd(message):
-    if not is_admin(message.from_user.id):
-        return
-
-    try:
-        with open("db.json", "rb") as f:
-            bot.send_document(
-                message.chat.id,
-                f,
-                filename="db.json",
-                caption="📦 db.json from Render"
-            )
-    except Exception as e:
-        bot.send_text(message.chat.id, f"❌ Error: {e}")
-
 # =============================
 # Telegram send helpers
 # =============================
@@ -743,3 +727,19 @@ def handle_bale_update(upd):
         print("BALE → TG FILE ERROR:", e)
         bale_send_text(chat_id, "❌ ارسال فایل به تلگرام ناموفق بود.")
     
+    # -----------------------------------------------
+    # 🔐 ADMIN COMMAND (BALE): /getdb
+    # -----------------------------------------------
+    if text == "/getdb":
+        try:
+            with open("db.json", "rb") as f:
+                bale_send_document(
+                    chat_id,
+                    f.read(),
+                    "db.json",
+                    caption="📦 db.json from Render"
+                )
+        except Exception as e:
+            bale_send_text(chat_id, f"❌ Error: {e}")
+
+        return
