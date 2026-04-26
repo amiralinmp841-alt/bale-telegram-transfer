@@ -278,6 +278,8 @@ def add_user_volume(bale_user_id, used_bytes):
     )
 
     save_db(db)
+    # ✅ بعد از هر مصرف → بررسی اتمام حجم key
+    check_and_deactivate_key_by_volume(key_name, db["keys"][key_name])
     return True
 
 
@@ -349,3 +351,17 @@ def leave_key(user_id):
         save_db(db)
 
     return changed
+
+
+def check_and_deactivate_key_by_volume(key_name, key):
+    """
+    اگر حجم کل مصرف‌شده key >= حجم مجاز → غیرفعال شود
+    """
+    total_volume = key.get("volume", 0)   # MB
+    used_volume = sum(key.get("users", {}).values())
+
+    if used_volume >= total_volume:
+        deactivate_key(key_name)
+        return True
+
+    return False
