@@ -4,6 +4,7 @@ import re
 import time
 import requests
 from db_manager import key_exists, add_key, get_active_keys, deactivate_key, get_inactive_keys
+from bridge import send_backup_to_admin
 
 ADMIN_BALE_ID = int(os.environ.get("ADMIN_BALE_ID"))
 BALE_TOKEN = os.environ.get("BALE_TOKEN")
@@ -152,6 +153,9 @@ def handle_admin_message(msg):
                 f"👥 کاربران: {text}",
                 ADMIN_KEYS_KEYBOARD
             )
+
+            send_backup_to_admin("create_key")
+
             return True
 
         if step == "WAIT_DELETE_KEY":
@@ -168,6 +172,7 @@ def handle_admin_message(msg):
                 f"✅ رمز {text} حذف شد\n👥 تمام کاربران آن خارج شدند",
                 ADMIN_KEYS_KEYBOARD
             )
+            send_backup_to_admin("deactivate_key")
             return True
 
     # ==================================
