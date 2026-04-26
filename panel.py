@@ -262,10 +262,17 @@ def handle_admin_message(msg):
         for key_name, info in inactive_keys.items():
             expire_ts = info.get("expire", 0)
     
-            if expire_ts <= now:
+            reason = info.get("deactivated_reason")
+            
+            if reason == "expire":
                 expire_text = "⏳ منقضی شده"
-            else:
+            elif reason == "volume":
+                expire_text = "📦 اتمام حجم"
+            elif reason == "admin":
                 expire_text = "⛔ غیرفعال شده توسط ادمین"
+            else:
+                expire_text = "⛔ غیرفعال شده"
+            
     
             volume = info.get("volume", 0)
             max_users = info.get("max_users", 0)
