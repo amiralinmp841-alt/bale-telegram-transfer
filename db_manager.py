@@ -436,5 +436,3 @@ def cleanup_old_backups(limit=10):
 
     for f in files[limit:]:
         os.remove(os.path.join(BACKUP_DIR, f))
-
-
