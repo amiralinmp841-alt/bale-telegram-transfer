@@ -149,9 +149,7 @@ def add_key(key_name, volume, expire, max_users):
     }
 
     save_db(db)
-    make_backup("create_key") #بکاپ
-    cleanup_old_backups()
-    
+    make_backup("create_key") #بکاپ    
 
 def get_active_keys():
     db = load_db()
@@ -192,7 +190,6 @@ def deactivate_key(key_name, reason="admin", do_backup=True):
     save_db(db)
     if do_backup:
         make_backup("deactivate_key") #بکاپ
-        cleanup_old_backups()
     return True
 
 
@@ -236,7 +233,6 @@ def join_key(key_name, user_id):
     users[user_id] = 0
     save_db(db)
     make_backup("join_key") #بکاپ
-    cleanup_old_backups()
     return True, "✅ با موفقیت وارد شدید."
 
 
@@ -357,7 +353,6 @@ def leave_key(user_id):
     if changed:
         save_db(db)
         make_backup("leave_key") #بکاپ
-        cleanup_old_backups()
 
     return changed
 
