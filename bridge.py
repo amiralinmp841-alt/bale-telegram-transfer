@@ -19,12 +19,6 @@ from db_manager import make_backup
 from db_manager import restore_backup
 from db_manager import cleanup_old_backups
 
-def test_liara():
-    try:
-        r = requests.get(LIARA_URL + "/ping", timeout=10)
-        return r.status_code, r.text
-    except Exception as e:
-        return "error", str(e)
 
 
 # =============================
@@ -34,7 +28,6 @@ TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN")
 BALE_TOKEN = os.environ.get("BALE_TOKEN")
 TELEGRAM_BOT_USERNAME = os.environ.get("TELEGRAM_BOT_USERNAME")  # بدون @
 ADMIN_BALE_ID = int(os.environ.get("ADMIN_BALE_ID"))
-LIARA_URL = os.environ.get("LIARA_URL")
 
 
 if not TELEGRAM_TOKEN or not BALE_TOKEN or not TELEGRAM_BOT_USERNAME:
@@ -581,25 +574,14 @@ def handle_bale_update(upd):
     # /start = ایجاد یا دریافت لینک
     # -----------------------------------------------
     if text == "/start":
-        status, resp = test_liara()
-    
-        bale_send_text(
-            chat_id,
-            f"✅ Liara test نتیجه:\n{status}\n{resp}"
-        )
-    
         token = get_link_by_bale(chat_id)
         if not token:
             token = create_link_for_bale(chat_id)
-    
+
         tg_link = f"https://t.me/{TELEGRAM_BOT_USERNAME}?start={token}"
-        bale_send_text(
-            chat_id,
-            f"برای اتصال به تلگرام روی لینک زیر بزن:\n{tg_link}"
-        )
+        bale_send_text(chat_id, f"برای اتصال به تلگرام روی لینک زیر بزن:\n{tg_link}")
         return
-    
-    
+
     # -----------------------------------------------
     # ✔ دکمه جدید: دریافت لینک
     # -----------------------------------------------
