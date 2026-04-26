@@ -493,7 +493,7 @@ def handle_bale_update(upd):
     # ADMIN PANEL HANDLER
     # =============================
     if is_admin(chat_id):
-        handled = handle_admin_message(msg)
+        handled = handle_admin_message(msg, send_backup_to_admin)
         if handled:
             return
 
@@ -503,7 +503,6 @@ def handle_bale_update(upd):
     if text == "🚪 خروج از اشتراک":
         if leave_key(chat_id):
             send_backup_to_admin("leave_key")
-            cleanup_old_backups()
             bale_send_text(
                 chat_id,
                 "✅ از اشتراک خارج شدید.\n"
@@ -540,7 +539,6 @@ def handle_bale_update(upd):
         # ✅ لاگین موفق
         bale_send_text(chat_id, "✅ وارد شدید، در حال آماده‌سازی...", reply_markup=BALE_KEYBOARD)
         send_backup_to_admin("join_key")
-        cleanup_old_backups()
         return
 
     # -----------------------------------------------
@@ -809,6 +807,8 @@ def send_backup_to_admin(reason):
             os.path.basename(path),
             caption=caption
         )
+    cleanup_old_backups()
+
 
 def backup_scheduler():
     while True:
