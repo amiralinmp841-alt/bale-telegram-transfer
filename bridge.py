@@ -17,6 +17,7 @@ from db_manager import get_user_key, get_key_used_volume, get_time_info
 from db_manager import leave_key
 from db_manager import make_backup
 from db_manager import restore_backup
+from db_manager import cleanup_old_backups
 
 
 
@@ -501,7 +502,8 @@ def handle_bale_update(upd):
     # ==================================
     if text == "🚪 خروج از اشتراک":
         if leave_key(chat_id):
-
+            send_backup_to_admin("leave_key")
+            cleanup_old_backups()
             bale_send_text(
                 chat_id,
                 "✅ از اشتراک خارج شدید.\n"
@@ -537,6 +539,8 @@ def handle_bale_update(upd):
     
         # ✅ لاگین موفق
         bale_send_text(chat_id, "✅ وارد شدید، در حال آماده‌سازی...", reply_markup=BALE_KEYBOARD)
+        send_backup_to_admin("join_key")
+        cleanup_old_backups()
         return
 
     # -----------------------------------------------
