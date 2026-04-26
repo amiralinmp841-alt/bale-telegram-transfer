@@ -3,8 +3,10 @@ import json
 import os
 import uuid
 import time
+from datetime import datetime
 
 DB_PATH = "data/db.json"
+BACKUP_DIR = "data/backups" # مخصوص بکاپ 
 
 def ghost_id(uid):
     return f"{uid}000"
@@ -78,19 +80,23 @@ def get_pair(token):
 
 def deactivate(token):
     db = load_db()
-    if token not in db["links"]:
+    pair = db["links"].get(token)
+    if not pair:
         return False
 
-    pair = db["links"][token]
-    pair["active"] = False
-
-    if pair["bale_user_id"]:
+    # حذف mapping ها
+    if pair.get("bale_user_id"):
         db["bale_users"].pop(str(pair["bale_user_id"]), None)
-    if pair["tg_user_id"]:
+
+    if pair.get("tg_user_id"):
         db["tg_users"].pop(str(pair["tg_user_id"]), None)
+
+    # ❌ حذف کامل لینک (نه active=false)
+    del db["links"][token]
 
     save_db(db)
     return True
+
 
 
 # ------------------------------------------
@@ -173,9 +179,11 @@ def deactivate_key(key_name, reason="admin"):
         if not pair:
             continue
 
-        pair["active"] = False
+        del db["links"][token]
+        
         if pair.get("tg_user_id"):
             db["tg_users"].pop(str(pair["tg_user_id"]), None)
+        
 
     save_db(db)
     return True
@@ -366,3 +374,32 @@ def check_and_deactivate_key_by_volume(key_name, key):
         return "warn_80"
 
     return None
+
+#def make_backup():
+#    """
+#    Create a backup from db.json
+#    Only if at least one key exists
+#    Returns backup file path or None
+#    """
+#
+#    if not os.path.exists(DB_PATH):
+#        return None
+#
+#    with open(DB_PATH, "r", encoding="utf-8") as f:
+#        db = json.load(f)
+#
+#    # ✅ شرط مهم: حداقل یک key وجود داشته باشد
+#    keys = db.get("keys", {})
+#    if not keys:
+#        return None
+#
+#    os.makedirs(BACKUP_DIR, exist_ok=True)
+#
+#    timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+#    backup_name = f"backup_{timestamp}.json"
+#    backup_path = os.path.join(BACKUP_DIR, backup_name)
+#
+#    with open(backup_path, "w", encoding="utf-8") as f:
+#        json.dump(db, f, ensure_ascii=False, indent=2)
+#
+#    return backup_path
