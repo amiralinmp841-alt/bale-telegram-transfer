@@ -445,23 +445,6 @@ def handle_bale_update(upd):
         handled = handle_admin_message(msg)
         if handled:
             return
-            
-    # -----------------------------------------------
-    # 🔐 ADMIN COMMAND (BALE): /getdb
-    # -----------------------------------------------
-    if text == "/getdb":
-        try:
-            with open("db.json", "rb") as f:
-                bale_send_document(
-                    chat_id,
-                    f.read(),
-                    "db.json",
-                    caption="📦 db.json from Render"
-                )
-        except Exception as e:
-            bale_send_text(chat_id, f"❌ Error: {e}")
-
-        return
 
     # ==================================
     # 🚪 خروج از اشتراک (باید اینجا باشد)
