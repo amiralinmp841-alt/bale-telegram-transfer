@@ -161,7 +161,7 @@ def get_active_keys():
     }
 
 
-def deactivate_key(key_name, reason="admin"):
+def deactivate_key(key_name, reason="admin", do_backup=True):
     db = load_db()
 
     key = db.get("keys", {}).get(key_name)
