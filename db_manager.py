@@ -233,19 +233,9 @@ def user_has_valid_key(bale_user_id):
             continue
 
         if key.get("expire", 0) <= now:
-            key["is_active"] = 0
-            key["users"] = {}
-
-            # ⛔ قطع همه لینک‌های مربوط
-            for token, pair in db.get("links", {}).items():
-                if pair.get("bale_user_id") == bale_user_id:
-                    pair["active"] = False
-                    if pair.get("tg_user_id"):
-                        db["tg_users"].pop(str(pair["tg_user_id"]), None)
-                    db["bale_users"].pop(str(bale_user_id), None)
-
-            save_db(db)
+            deactivate_key(key_name, reason="expire")
             return False
+        
 
         if str(bale_user_id) in key.get("users", {}):
             return True
@@ -261,27 +251,25 @@ def get_inactive_keys():
 
 
 def add_user_volume(bale_user_id, used_bytes):
-    """
-    used_bytes: حجم واقعی بر حسب بایت
-    حجم فقط به key فعال فعلی کاربر اضافه می‌شود
-    """
     key_name, key = get_user_key(bale_user_id)
     if not key:
-        return False  # کاربر key فعال ندارد
+        return None
 
     db = load_db()
-    used_mb = used_bytes / (1024 * 1024)
     uid = str(bale_user_id)
+    used_mb = used_bytes / (1024 * 1024)
 
-    # ✅ آپدیت حجم فقط روی همان key
     db["keys"][key_name]["users"][uid] = round(
         db["keys"][key_name]["users"].get(uid, 0) + used_mb, 2
     )
 
     save_db(db)
-    # ✅ بعد از هر مصرف → بررسی اتمام حجم key
-    check_and_deactivate_key_by_volume(key_name, db["keys"][key_name])
-    return True
+
+    return check_and_deactivate_key_by_volume(
+        key_name,
+        db["keys"][key_name]
+    )
+
 
 
 # -----------------------------------------------
@@ -342,10 +330,10 @@ def leave_key(user_id):
         deactivate(old_token)
 
         if pair and pair.get("tg_user_id"):
-            tg_send_text(
-                pair["tg_user_id"],
-                "❌ از اشتراک خارج شدید و اتصال قطع شد."
-            )
+            #tg_send_text(
+            #    pair["tg_user_id"],
+            #    "❌ از اشتراک خارج شدید و اتصال قطع شد."
+            #)
         changed = True
 
     if changed:
@@ -354,48 +342,26 @@ def leave_key(user_id):
     return changed
 
 
+# خروجی معنایی
+# None | "warn_80" | "expired"
+
 def check_and_deactivate_key_by_volume(key_name, key):
-    """
-    - هشدار 80٪ فقط یک‌بار (warned_80)
-    - پیام پایان حجم
-    - غیرفعال‌سازی کامل با reason=volume
-    """
-    total_volume = key.get("volume", 0)
-    used_volume = sum(key.get("users", {}).values())
+    total = key.get("volume", 0)
+    used = sum(key.get("users", {}).values())
 
-    if total_volume <= 0:
-        return False
+    if total <= 0:
+        return None
 
-    usage_percent = (used_volume / total_volume) * 100
+    percent = (used / total) * 100
 
-    # -----------------------------
-    # ⚠️ هشدار 80 درصد
-    # -----------------------------
-    if usage_percent >= 80 and not key.get("warned_80"):
-        for bale_user_id in key.get("users", {}).keys():
-            bale_send_text(
-                bale_user_id,
-                "⚠️ هشدار مصرف حجم\n\n"
-                "شما به 80٪ از حجم اشتراک خود رسیده‌اید."
-            )
-        key["warned_80"] = True
-        save_db(load_db())
-    
-    # -----------------------------
-    # ❌ قطع کامل در 100٪
-    # -----------------------------
-    if used_volume >= total_volume:
-        # پیام به همه کاربران این key
-        for bale_user_id in key.get("users", {}).keys():
-            bale_send_text(
-                bale_user_id,
-                "📦 حجم اشتراک شما به پایان رسید.\n"
-                "❌ اتصال شما قطع شد."
-            )
-
-        # غیرفعال‌سازی کامل
+    if percent >= 100:
         deactivate_key(key_name, reason="volume")
-        return True
+        return "expired"
 
-    return False
+    if percent >= 80 and not key.get("warned_80"):
+        db = load_db()
+        db["keys"][key_name]["warned_80"] = True
+        save_db(db)
+        return "warn_80"
 
+    return None
