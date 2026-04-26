@@ -330,6 +330,7 @@ def leave_key(user_id):
         deactivate(old_token)
 
         if pair and pair.get("tg_user_id"):
+            pass
             #tg_send_text(
             #    pair["tg_user_id"],
             #    "❌ از اشتراک خارج شدید و اتصال قطع شد."
