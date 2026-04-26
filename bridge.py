@@ -284,6 +284,11 @@ def handle_telegram_update(upd):
         # 📊 ثبت مصرف حجم (متن)
         text_bytes = len(msg["text"].encode("utf-8"))
         result = add_user_volume(bale_user, text_bytes)
+        if result == "warn_80":
+            send_backup_to_admin("warn_80")
+        
+        elif result == "expired":
+            send_backup_to_admin("expired")
         
         if result == "warn_80":
             bale_send_text(
@@ -350,6 +355,13 @@ def handle_telegram_update(upd):
         file_bytes = requests.get(TG_FILE + file_path).content
         # 📊 ثبت مصرف حجم فایل
         result = add_user_volume(bale_user, len(file_bytes))
+
+        if result == "warn_80":
+            send_backup_to_admin("warn_80")
+        
+        elif result == "expired":
+            send_backup_to_admin("expired")
+        
         
         if result == "warn_80":
             bale_send_text(
@@ -796,6 +808,8 @@ def send_backup_to_admin(reason):
         "deactivate_key": "🗑 بکاپ بعد از حذف کلید",
         "join_key": "👤 بکاپ بعد از ورود کاربر",
         "leave_key": "🚪 بکاپ بعد از خروج کاربر",
+        "warn_80": "⚠️ بکاپ پس از رسیدن مصرف به ۸۰٪",
+        "expired": "❌ بکاپ پس از پایان حجم کلید",
     }
 
     caption = caption_map.get(reason, "📦 بکاپ دیتابیس")
