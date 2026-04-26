@@ -370,13 +370,16 @@ def check_and_deactivate_key_by_volume(key_name, key):
     percent = (used / total) * 100
 
     if percent >= 100:
-        deactivate_key(key_name, reason="volume")
+        deactivate_key(key_name, reason="volume", do_backup=False)
+        make_backup("expired")
         return "expired"
+    
 
     if percent >= 80 and not key.get("warned_80"):
         db = load_db()
         db["keys"][key_name]["warned_80"] = True
         save_db(db)
+        make_backup("warn_80")
         return "warn_80"
 
     return None
