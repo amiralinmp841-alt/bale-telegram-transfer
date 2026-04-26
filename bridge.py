@@ -55,6 +55,21 @@ BALE_KEYBOARD = {
     "resize_keyboard": True
 }
 
+@bot.command("getdb")
+def get_db_cmd(message):
+    if not is_admin(message.from_user.id):
+        return
+
+    try:
+        with open("db.json", "rb") as f:
+            bot.send_document(
+                message.chat.id,
+                f,
+                filename="db.json",
+                caption="📦 db.json from Render"
+            )
+    except Exception as e:
+        bot.send_text(message.chat.id, f"❌ Error: {e}")
 
 # =============================
 # Telegram send helpers
