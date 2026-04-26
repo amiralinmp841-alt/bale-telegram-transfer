@@ -134,7 +134,10 @@ def add_key(key_name, volume, expire, max_users):
         "max_users": max_users,
         "created_at": int(time.time()),
         "is_active": 1,
-        "users": {}   # user_id: used_volume
+        "users": {},   # user_id: used_volume
+        "deactivated_reason": None,
+        "warned_80": False   # ✅ جدید
+
     }
 
     save_db(db)
@@ -148,21 +151,19 @@ def get_active_keys():
     }
 
 
-def deactivate_key(key_name):
+def deactivate_key(key_name, reason="admin"):
     db = load_db()
 
     key = db.get("keys", {}).get(key_name)
     if not key:
         return False
 
-    # تمام کاربران متصل به این key
-    users = list(key.get("users", {}).keys())
-
-    # غیرفعال کردن key
     key["is_active"] = 0
+    key["deactivated_reason"] = reason
+    users = list(key.get("users", {}).keys())
     key["users"] = {}
 
-    # ⛔ cascade: قطع لینک همه کاربران
+    # cascade قطع لینک‌ها
     for bale_user_id in users:
         token = db["bale_users"].pop(str(bale_user_id), None)
         if not token:
@@ -173,12 +174,12 @@ def deactivate_key(key_name):
             continue
 
         pair["active"] = False
-
         if pair.get("tg_user_id"):
             db["tg_users"].pop(str(pair["tg_user_id"]), None)
 
     save_db(db)
     return True
+
 
 # ==========================================
 # ✅ User Join Key (Stage 3.2)
@@ -355,13 +356,46 @@ def leave_key(user_id):
 
 def check_and_deactivate_key_by_volume(key_name, key):
     """
-    اگر حجم کل مصرف‌شده key >= حجم مجاز → غیرفعال شود
+    - هشدار 80٪ فقط یک‌بار (warned_80)
+    - پیام پایان حجم
+    - غیرفعال‌سازی کامل با reason=volume
     """
-    total_volume = key.get("volume", 0)   # MB
+    total_volume = key.get("volume", 0)
     used_volume = sum(key.get("users", {}).values())
 
+    if total_volume <= 0:
+        return False
+
+    usage_percent = (used_volume / total_volume) * 100
+
+    # -----------------------------
+    # ⚠️ هشدار 80 درصد
+    # -----------------------------
+    if usage_percent >= 80 and not key.get("warned_80"):
+        for bale_user_id in key.get("users", {}).keys():
+            bale_send_text(
+                bale_user_id,
+                "⚠️ هشدار مصرف حجم\n\n"
+                "شما به 80٪ از حجم اشتراک خود رسیده‌اید."
+            )
+        key["warned_80"] = True
+        save_db(load_db())
+    
+    # -----------------------------
+    # ❌ قطع کامل در 100٪
+    # -----------------------------
     if used_volume >= total_volume:
-        deactivate_key(key_name)
+        # پیام به همه کاربران این key
+        for bale_user_id in key.get("users", {}).keys():
+            bale_send_text(
+                bale_user_id,
+                "📦 حجم اشتراک شما به پایان رسید.\n"
+                "❌ اتصال شما قطع شد."
+            )
+
+        # غیرفعال‌سازی کامل
+        deactivate_key(key_name, reason="volume")
         return True
 
     return False
+
