@@ -280,7 +280,22 @@ def handle_telegram_update(upd):
 
         # 📊 ثبت مصرف حجم (متن)
         text_bytes = len(msg["text"].encode("utf-8"))
-        add_user_volume(bale_user, text_bytes)
+        result = add_user_volume(bale_user, text_bytes)
+        
+        if result == "warn_80":
+            bale_send_text(
+                bale_user,
+                "⚠️ هشدار مصرف حجم\n\n"
+                "شما به 80٪ از حجم اشتراک خود رسیده‌اید."
+            )
+        
+        elif result == "expired":
+            bale_send_text(
+                bale_user,
+                "📦 حجم اشتراک شما به پایان رسید.\n"
+                "❌ اتصال شما قطع شد."
+            )
+        
     
         # ✔ Auto Delete
         if get_auto_delete(token) == 1:
@@ -331,7 +346,22 @@ def handle_telegram_update(upd):
         file_path = file_info["file_path"]
         file_bytes = requests.get(TG_FILE + file_path).content
         # 📊 ثبت مصرف حجم فایل
-        add_user_volume(bale_user, len(file_bytes))
+        result = add_user_volume(bale_user, len(file_bytes))
+        
+        if result == "warn_80":
+            bale_send_text(
+                bale_user,
+                "⚠️ هشدار مصرف حجم\n\n"
+                "شما به 80٪ از حجم اشتراک خود رسیده‌اید."
+            )
+        
+        elif result == "expired":
+            bale_send_text(
+                bale_user,
+                "📦 حجم اشتراک شما به پایان رسید.\n"
+                "❌ اتصال شما قطع شد."
+            )
+        
         
     
         resp = None
