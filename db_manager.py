@@ -4,6 +4,8 @@ import os
 import uuid
 import time
 from datetime import datetime
+import shutil
+
 
 DB_PATH = "data/db.json"
 BACKUP_DIR = "data/backups" # مخصوص بکاپ 
@@ -147,7 +149,9 @@ def add_key(key_name, volume, expire, max_users):
     }
 
     save_db(db)
-
+    make_backup("create_key") #بکاپ
+    cleanup_old_backups()
+    
 
 def get_active_keys():
     db = load_db()
@@ -186,6 +190,9 @@ def deactivate_key(key_name, reason="admin"):
         
 
     save_db(db)
+    if do_backup:
+        make_backup("deactivate_key") #بکاپ
+        cleanup_old_backups()
     return True
 
 
@@ -228,6 +235,8 @@ def join_key(key_name, user_id):
     # ✅ ورود جدید
     users[user_id] = 0
     save_db(db)
+    make_backup("join_key") #بکاپ
+    cleanup_old_backups()
     return True, "✅ با موفقیت وارد شدید."
 
 
@@ -241,8 +250,8 @@ def user_has_valid_key(bale_user_id):
             continue
 
         if key.get("expire", 0) <= now:
-            deactivate_key(key_name, reason="expire")
-            return False
+            deactivate_key(key_name, reason="expire", do_backup=False)
+            continue   
         
 
         if str(bale_user_id) in key.get("users", {}):
@@ -347,6 +356,8 @@ def leave_key(user_id):
 
     if changed:
         save_db(db)
+        make_backup("leave_key") #بکاپ
+        cleanup_old_backups()
 
     return changed
 
@@ -375,31 +386,60 @@ def check_and_deactivate_key_by_volume(key_name, key):
 
     return None
 
-#def make_backup():
-#    """
-#    Create a backup from db.json
-#    Only if at least one key exists
-#    Returns backup file path or None
-#    """
-#
-#    if not os.path.exists(DB_PATH):
-#        return None
-#
-#    with open(DB_PATH, "r", encoding="utf-8") as f:
-#        db = json.load(f)
-#
-#    # ✅ شرط مهم: حداقل یک key وجود داشته باشد
-#    keys = db.get("keys", {})
-#    if not keys:
-#        return None
-#
-#    os.makedirs(BACKUP_DIR, exist_ok=True)
-#
-#    timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-#    backup_name = f"backup_{timestamp}.json"
-#    backup_path = os.path.join(BACKUP_DIR, backup_name)
-#
-#    with open(backup_path, "w", encoding="utf-8") as f:
-#        json.dump(db, f, ensure_ascii=False, indent=2)
-#
-#    return backup_path
+# -----------------------------------------------
+# سیستم بکاپ
+# -----------------------------------------------
+def make_backup(reason: str):
+    """
+    reason examples:
+    - auto_30min
+    - create_key
+    - deactivate_key
+    - join_key
+    - leave_key
+    """
+
+    if not os.path.exists(DB_PATH):
+        return None
+
+    with open(DB_PATH, "r", encoding="utf-8") as f:
+        db = json.load(f)
+
+    # ✅ شرط: حداقل یک key
+    if not db.get("keys"):
+        return None
+
+    os.makedirs(BACKUP_DIR, exist_ok=True)
+
+    timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+    backup_name = f"backup_{reason}_{timestamp}.json"
+    backup_path = os.path.join(BACKUP_DIR, backup_name)
+
+    with open(backup_path, "w", encoding="utf-8") as f:
+        json.dump(db, f, ensure_ascii=False, indent=2)
+
+    return backup_path
+
+
+def restore_backup(file_path):
+    try:
+        shutil.copy(file_path, DB_PATH)
+        return True
+    except Exception as e:
+        print("RESTORE ERROR:", e)
+        return False
+
+def cleanup_old_backups(limit=10):
+    if not os.path.exists(BACKUP_DIR):
+        return
+
+    files = sorted(
+        os.listdir(BACKUP_DIR),
+        key=lambda x: os.path.getmtime(os.path.join(BACKUP_DIR, x)),
+        reverse=True
+    )
+
+    for f in files[limit:]:
+        os.remove(os.path.join(BACKUP_DIR, f))
+
+
