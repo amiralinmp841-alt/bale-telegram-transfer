@@ -4,29 +4,28 @@ import requests
 import time
 import threading
 
-import base64
-import uuid
-import math
-import queue
-
-
 from db_manager import (
     create_link_for_bale, get_link_by_bale, activate_link,
     get_link_by_telegram, get_pair, deactivate,
-    get_auto_delete, toggle_auto_delete,  # ✔ اضافه شد
-    join_key, user_has_valid_key, add_user_volume,
-    get_user_key, get_key_used_volume, get_time_info,
-    leave_key, make_backup, restore_backup, cleanup_old_backups
+    get_auto_delete, toggle_auto_delete   # ✔ اضافه شد
 )
 from panel import handle_admin_message, is_admin
+from db_manager import join_key
+from db_manager import user_has_valid_key
+from db_manager import add_user_volume
+from db_manager import get_user_key, get_key_used_volume, get_time_info
+from db_manager import leave_key
+from db_manager import make_backup
+from db_manager import restore_backup
+from db_manager import cleanup_old_backups
 
-# =============================
-# variable
-# =============================
-CHUNK_SIZE = 10 * 1024 * 1024  # 10MB امن برای بله
-MAX_PARALLEL_CHUNKS = 3       # فشار بله کنترل شود
+def test_liara():
+    try:
+        r = requests.get(LIARA_URL + "/ping", timeout=10)
+        return r.status_code, r.text
+    except Exception as e:
+        return "error", str(e)
 
-chunk_queue = queue.Queue()
 
 # =============================
 # ENV VARIABLES
@@ -35,6 +34,7 @@ TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN")
 BALE_TOKEN = os.environ.get("BALE_TOKEN")
 TELEGRAM_BOT_USERNAME = os.environ.get("TELEGRAM_BOT_USERNAME")  # بدون @
 ADMIN_BALE_ID = int(os.environ.get("ADMIN_BALE_ID"))
+LIARA_URL = os.environ.get("LIARA_URL")
 
 
 if not TELEGRAM_TOKEN or not BALE_TOKEN or not TELEGRAM_BOT_USERNAME:
@@ -384,20 +384,6 @@ def handle_telegram_update(upd):
                 "❌ اتصال شما قطع شد."
             )
         
-        file_size = len(file_bytes)
-        
-        if file_size > CHUNK_SIZE:
-            send_large_file_via_bale_pipeline(
-                bale_user_id=bale_user,
-                file_bytes=file_bytes,
-                filename=file_path.split("/")[-1],
-                original_caption=caption
-            )
-            bale_send_text(
-                bale_user,
-                "📤 فایل حجیم دریافت شد، در حال آماده‌سازی لینک دانلود..."
-            )
-            return
         
     
         resp = None
@@ -456,10 +442,9 @@ def handle_telegram_update(upd):
                     args=(bale_user, mid),
                     daemon=True
                 ).start()
-    except Exception as e:
-        print("FILE SEND ERROR:", e)
-        tg_send_text(chat_id, "❌ خطا در پردازش فایل. لطفاً دوباره تلاش کنید.")
     
+    except Exception:
+        tg_send_text(chat_id, "❌ ارسال فایل به بله ناموفق بود. احتمالاً حجم بیش از حد است.")
     
 
 
@@ -596,14 +581,25 @@ def handle_bale_update(upd):
     # /start = ایجاد یا دریافت لینک
     # -----------------------------------------------
     if text == "/start":
+        status, resp = test_liara()
+    
+        bale_send_text(
+            chat_id,
+            f"✅ Liara test نتیجه:\n{status}\n{resp}"
+        )
+    
         token = get_link_by_bale(chat_id)
         if not token:
             token = create_link_for_bale(chat_id)
-
+    
         tg_link = f"https://t.me/{TELEGRAM_BOT_USERNAME}?start={token}"
-        bale_send_text(chat_id, f"برای اتصال به تلگرام روی لینک زیر بزن:\n{tg_link}")
+        bale_send_text(
+            chat_id,
+            f"برای اتصال به تلگرام روی لینک زیر بزن:\n{tg_link}"
+        )
         return
-
+    
+    
     # -----------------------------------------------
     # ✔ دکمه جدید: دریافت لینک
     # -----------------------------------------------
@@ -855,64 +851,4 @@ threading.Thread(
     target=backup_scheduler,
     daemon=True
 ).start()
-
-
-# ============================================================
-# ===== دالنلود فایل حجم بالا ===============================
-# ============================================================
-def bale_chunk_sender():
-    while True:
-        job = chunk_queue.get()
-        if job is None:
-            break
-
-        try:
-            bale_send_document(
-                job["chat_id"],
-                job["data"],
-                job["filename"],
-                caption=job["caption"]
-            )
-        except Exception as e:
-            print("CHUNK SEND ERROR:", e)
-            time.sleep(2)
-            chunk_queue.put(job)  # retry
-
-        chunk_queue.task_done()
-
-
-for _ in range(MAX_PARALLEL_CHUNKS):
-    threading.Thread(target=bale_chunk_sender, daemon=True).start()
-
-def send_large_file_via_bale_pipeline(
-    bale_user_id,
-    file_bytes,
-    filename,
-    original_caption=""
-):
-    upload_id = uuid.uuid4().hex
-    total_chunks = math.ceil(len(file_bytes) / CHUNK_SIZE)
-
-    caption_b64 = base64.b64encode(
-        (original_caption or "").encode()
-    ).decode()
-
-    for idx in range(total_chunks):
-        chunk = file_bytes[
-            idx * CHUNK_SIZE:(idx + 1) * CHUNK_SIZE
-        ]
-
-        caption = (
-            f"CHUNK|{upload_id}|{idx}|{total_chunks}|"
-            f"{bale_user_id}|{filename}|{len(file_bytes)}|{caption_b64}"
-        )
-
-        chunk_queue.put({
-            "chat_id": ADMIN_BALE_ID,   # 👈 چت مخفی
-            "data": chunk,
-            "filename": f"{filename}.part{idx}",
-            "caption": caption
-        })
-
-    return upload_id
 
