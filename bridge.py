@@ -456,9 +456,10 @@ def handle_telegram_update(upd):
                     args=(bale_user, mid),
                     daemon=True
                 ).start()
+    except Exception as e:
+        print("FILE SEND ERROR:", e)
+        tg_send_text(chat_id, "❌ خطا در پردازش فایل. لطفاً دوباره تلاش کنید.")
     
-    except Exception:
-        tg_send_text(chat_id, "❌ ارسال فایل به بله ناموفق بود. احتمالاً حجم بیش از حد است.")
     
 
 
