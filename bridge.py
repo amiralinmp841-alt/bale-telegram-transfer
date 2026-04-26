@@ -15,6 +15,8 @@ from db_manager import user_has_valid_key
 from db_manager import add_user_volume
 from db_manager import get_user_key, get_key_used_volume, get_time_info
 from db_manager import leave_key
+from db_manager import make_backup
+from db_manager import restore_backup
 
 
 
@@ -438,27 +440,53 @@ def handle_bale_update(upd):
     chat_id = msg["chat"]["id"]
     text = msg.get("text", "").strip()
 
-    # -----------------------------------------------
-    # 🔐 ADMIN BACKUP COMMAND: /getdb
-    # -----------------------------------------------
-    if text == "/getdb":
-        if not is_admin(chat_id):
-            bale_send_text(chat_id, "⛔ دسترسی ندارید.")
-            return
+    ## -----------------------------------------------
+    ## 🔐 ADMIN BACKUP COMMAND: /getdb
+    ## -----------------------------------------------
+    #if text == "/getdb":
+    #    if not is_admin(chat_id):
+    #        bale_send_text(chat_id, "⛔ دسترسی ندارید.")
+    #        return    #
+    #    try:
+    #        with open("data/db.json", "rb") as f:
+    #            bale_send_document(
+    #                chat_id,
+    #                f.read(),
+    #                "db.json",
+    #                caption="📦 بکاپ دیتابیس"
+    #            )
+    #    except Exception as e:
+    #        bale_send_text(chat_id, f"❌ Error: {e}")    #
+    #    return
 
-        try:
-            with open("data/db.json", "rb") as f:
-                bale_send_document(
-                    chat_id,
-                    f.read(),
-                    "db.json",
-                    caption="📦 بکاپ دیتابیس"
-                )
-        except Exception as e:
-            bale_send_text(chat_id, f"❌ Error: {e}")
 
+    # -----------------------------------------------
+    # ♻️ RESTORE BACKUP (ADMIN ONLY)
+    # -----------------------------------------------
+    if is_admin(chat_id) and "document" in msg:
+        file_id = msg["document"]["file_id"]
+    
+        info = requests.get(
+            BALE_API + "getFile",
+            params={"file_id": file_id}
+        ).json()["result"]
+    
+        file_path = info["file_path"]
+        file_url = f"https://tapi.bale.ai/file/bot{BALE_TOKEN}/{file_path}"
+    
+        file_bytes = requests.get(file_url).content
+    
+        temp_path = "data/_restore_backup.json"
+        with open(temp_path, "wb") as f:
+            f.write(file_bytes)
+    
+        if restore_backup(temp_path):
+            bale_send_text(chat_id, "✅ بکاپ با موفقیت بازیابی شد.")
+        else:
+            bale_send_text(chat_id, "❌ خطا در بازیابی بکاپ.")
+    
         return
-
+    
 
     # =============================
     # ADMIN PANEL HANDLER
@@ -750,3 +778,41 @@ def handle_bale_update(upd):
         print("BALE → TG FILE ERROR:", e)
         bale_send_text(chat_id, "❌ ارسال فایل به تلگرام ناموفق بود.")
     
+
+
+# ===============================================
+# ===== BACKUP SYSTEM ===========================
+# ===============================================
+def send_backup_to_admin(reason):
+    path = make_backup(reason)
+    if not path:
+        return
+
+    caption_map = {
+        "auto_30min": "⏱ بکاپ اتوماتیک ۳۰ دقیقه‌ای",
+        "create_key": "🔑 بکاپ بعد از ساخت کلید",
+        "deactivate_key": "🗑 بکاپ بعد از حذف کلید",
+        "join_key": "👤 بکاپ بعد از ورود کاربر",
+        "leave_key": "🚪 بکاپ بعد از خروج کاربر",
+    }
+
+    caption = caption_map.get(reason, "📦 بکاپ دیتابیس")
+
+    with open(path, "rb") as f:
+        bale_send_document(
+            ADMIN_BALE_ID,
+            f.read(),
+            os.path.basename(path),
+            caption=caption
+        )
+
+def backup_scheduler():
+    while True:
+        time.sleep(1800)  # 30 دقیقه
+        send_backup_to_admin("auto_30min")
+
+threading.Thread(
+    target=backup_scheduler,
+    daemon=True
+).start()
+
