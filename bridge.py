@@ -3,6 +3,8 @@ import os
 import requests
 import time
 import threading
+import io
+import zipfile
 
 from db_manager import (
     create_link_for_bale, get_link_by_bale, activate_link,
@@ -28,6 +30,9 @@ TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN")
 BALE_TOKEN = os.environ.get("BALE_TOKEN")
 TELEGRAM_BOT_USERNAME = os.environ.get("TELEGRAM_BOT_USERNAME")  # بدون @
 ADMIN_BALE_ID = int(os.environ.get("ADMIN_BALE_ID"))
+BALE_GROUP_ID = int(os.environ.get("BALE_GROUP_ID"))
+ZIP_PART_SIZE_MB = int(os.environ.get("ZIP_PART_SIZE_MB", "18"))
+ZIP_PART_SIZE = ZIP_PART_SIZE_MB * 1024 * 1024
 
 
 if not TELEGRAM_TOKEN or not BALE_TOKEN or not TELEGRAM_BOT_USERNAME:
@@ -58,6 +63,61 @@ BALE_KEYBOARD = {
     "resize_keyboard": True
 }
 
+# ===============================================
+# ===== up 20 mb down ===========================
+# ===============================================
+
+def split_to_zip_parts(file_bytes: bytes, original_name: str, part_size: int):
+    parts = []
+    total_size = len(file_bytes)
+    offset = 0
+    idx = 1
+
+    while offset < total_size:
+        chunk = file_bytes[offset: offset + part_size]
+        offset += part_size
+
+        mem = io.BytesIO()
+        with zipfile.ZipFile(mem, "w", zipfile.ZIP_DEFLATED) as zf:
+            zf.writestr(original_name, chunk)
+
+        mem.seek(0)
+        parts.append((idx, mem.read()))
+        idx += 1
+
+    return parts
+
+def send_large_file_as_zip_to_bale(
+    file_bytes: bytes,
+    original_name: str,
+    tg_user: dict,
+    caption: str = None
+):
+    parts = split_to_zip_parts(file_bytes, original_name, ZIP_PART_SIZE)
+    total = len(parts)
+
+    # ✅ شناسنامه
+    header = (
+        "📦 فایل بزرگ دریافتی از تلگرام\n\n"
+        f"👤 کاربر: @{tg_user.get('username') or tg_user.get('id')}\n"
+        f"📄 نام فایل: {original_name}\n"
+        f"🧩 تعداد پارت: {total}\n"
+        f"📦 هر پارت: {ZIP_PART_SIZE_MB}MB\n"
+    )
+    if caption:
+        header += f"\n📝 کپشن:\n{caption}"
+
+    bale_send_text(BALE_GROUP_ID, header)
+
+    # ✅ ارسال ZIPها
+    for idx, zip_bytes in parts:
+        bale_send_document(
+            BALE_GROUP_ID,
+            zip_bytes,
+            f"{original_name}.part{idx}.zip",
+            caption=f"📦 پارت {idx}/{total}"
+        )
+        time.sleep(0.6)
 
 # =============================
 # Telegram send helpers
@@ -353,6 +413,31 @@ def handle_telegram_update(upd):
     
         file_path = file_info["file_path"]
         file_bytes = requests.get(TG_FILE + file_path).content
+        # 🔁 فقط فایل‌های بزرگ‌تر از حد مجاز بله
+        if len(file_bytes) > ZIP_PART_SIZE:
+            try:
+                send_large_file_as_zip_to_bale(
+                    file_bytes=file_bytes,
+                    original_name=file_path.split("/")[-1],
+                    tg_user=msg.get("from", {}),
+                    caption=caption
+                )
+        
+                tg_send_text(
+                    chat_id,
+                    "✅ فایل بزرگ دریافت شد و به‌صورت ZIPهای چندبخشی در گروه بله ارسال شد."
+                )
+        
+            except Exception as e:
+                print("ZIP SEND ERROR:", e)
+                tg_send_text(
+                    chat_id,
+                    "❌ خطا در پردازش فایل بزرگ. لطفاً دوباره تلاش کنید."
+                )
+        
+            # ⛔ فقط برای فایل بزرگ برگرد
+            return
+        
         # 📊 ثبت مصرف حجم فایل
         result = add_user_volume(bale_user, len(file_bytes))
 
