@@ -28,7 +28,6 @@ TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN")
 BALE_TOKEN = os.environ.get("BALE_TOKEN")
 TELEGRAM_BOT_USERNAME = os.environ.get("TELEGRAM_BOT_USERNAME")  # بدون @
 ADMIN_BALE_ID = int(os.environ.get("ADMIN_BALE_ID"))
-BALE_GROUP_ID = int(os.environ.get("BALE_GROUP_ID"))
 
 
 if not TELEGRAM_TOKEN or not BALE_TOKEN or not TELEGRAM_BOT_USERNAME:
@@ -37,7 +36,6 @@ if not TELEGRAM_TOKEN or not BALE_TOKEN or not TELEGRAM_BOT_USERNAME:
 TG_API = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/"
 TG_FILE = f"https://api.telegram.org/file/bot{TELEGRAM_TOKEN}/"
 BALE_API = f"https://tapi.bale.ai/bot{BALE_TOKEN}/"
-MAX_BALE_FILE_SIZE = 18 * 1024 * 1024  # 20MB
 
 # =============================
 # KEYBOARDS
@@ -59,47 +57,6 @@ BALE_KEYBOARD = {
     ],
     "resize_keyboard": True
 }
-
-# ===============================================
-# ===== up 20 mb down ===========================
-# ===============================================
-
-def split_bytes(data: bytes, chunk_size: int):
-    return [data[i:i + chunk_size] for i in range(0, len(data), chunk_size)]
-
-def send_large_file_to_bale(
-    file_bytes: bytes,
-    original_name: str,
-    tg_user,
-    caption: str = None
-):
-    parts = split_bytes(file_bytes, MAX_BALE_FILE_SIZE)
-    total = len(parts)
-
-    header_text = (
-        "📦 **فایل اسپلیت‌شده از تلگرام**\n\n"
-        f"👤 ارسال‌کننده: {tg_user.get('username') or tg_user.get('id')}\n"
-        f"📄 نام فایل: {original_name}\n"
-        f"🧩 تعداد پارت: {total}\n"
-    )
-
-    if caption:
-        header_text += f"\n📝 کپشن:\n{caption}"
-
-    # ✅ پیام شناسنامه (قبل از ارسال فایل‌ها)
-    bale_send_text(BALE_GROUP_ID, header_text)
-
-    for idx, part in enumerate(parts, start=1):
-        part_caption = f"📄 {original_name}\n🔢 پارت {idx}/{total}"
-
-        bale_send_document(
-            BALE_GROUP_ID,
-            part,
-            f"{original_name}.part{idx}",
-            caption=part_caption
-        )
-
-        time.sleep(0.5)  # جلوگیری از فلود
 
 
 # =============================
@@ -396,22 +353,6 @@ def handle_telegram_update(upd):
     
         file_path = file_info["file_path"]
         file_bytes = requests.get(TG_FILE + file_path).content
-
-        # ✅ فیلتر حجم (بیرون try)
-        if len(file_bytes) > MAX_BALE_FILE_SIZE:
-            try:
-                send_large_file_to_bale(
-                    file_bytes=file_bytes,
-                    original_name=file_path.split("/")[-1],
-                    tg_user=msg.get("from", {}),
-                    caption=caption
-                )
-                tg_send_text(chat_id, "✅ فایل بزرگ‌تر از ۲۰ مگ بود و به‌صورت تکه‌تکه در گروه بله ارسال شد.")
-            except Exception as e:
-                print("SPLIT ERROR:", e)
-                tg_send_text(chat_id, "❌ خطا در ارسال فایل اسپلیت‌شده به بله.")
-            return
-        
         # 📊 ثبت مصرف حجم فایل
         result = add_user_volume(bale_user, len(file_bytes))
 
@@ -638,9 +579,7 @@ def handle_bale_update(upd):
             token = create_link_for_bale(chat_id)
 
         tg_link = f"https://t.me/{TELEGRAM_BOT_USERNAME}?start={token}"
-        bale_send_text(chat_id, 
-        f"برای اتصال به تلگرام روی لینک زیر بزن:\n{tg_link}",
-        reply_markup=BALE_KEYBOARD)
+        bale_send_text(chat_id, f"برای اتصال به تلگرام روی لینک زیر بزن:\n{tg_link}")
         return
 
     # -----------------------------------------------
@@ -894,5 +833,4 @@ threading.Thread(
     target=backup_scheduler,
     daemon=True
 ).start()
-
 
