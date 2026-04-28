@@ -366,7 +366,7 @@ def handle_telegram_update(upd):
         ).json()["result"]
     
         file_path = file_info["file_path"]
-        file_bytes = requests.get(TG_FILE + file_path).content
+        file_bytes = requests.get(TG_FILE + file_path, timeout=30).content
         # 📊 ثبت مصرف حجم فایل
         result = add_user_volume(bale_user, len(file_bytes))
 
@@ -480,6 +480,10 @@ def handle_bale_update(upd):
             }
         
             videos = youtube_search(query)
+            if not videos:
+                bale_send_text(chat_id,"❌ نتیجه‌ای یافت نشد.")
+                return
+            
         
             for v in videos:
                 bale_send_photo(
@@ -558,7 +562,11 @@ def handle_bale_update(upd):
             bale_send_text(chat_id, "✂️ در حال تقسیم فایل...")
             
             parts = split_video_ffmpeg(path, chat_id)
-            
+            if not parts:
+                bale_send_text(chat_id, "❌ خطا در تقسیم ویدیو.")
+                clean_temp_files(chat_id)
+                user_download_cache.pop(chat_id, None)
+                return
                         
             total_sent_mb = 0
             
@@ -573,16 +581,22 @@ def handle_bale_update(upd):
                     bale_send_text(chat_id, "⚠️ مصرف شما به ۸۰٪ رسیده.")
                 elif result == "expired":
                     bale_send_text(chat_id, "❌ حجم اشتراک شما تمام شد.")
+                    clean_temp_files(chat_id)
+                    user_download_cache.pop(chat_id, None)
+                    user_search_cache.pop(chat_id, None)
                     return  # ارسال ادامه نمی‌یابد
             
                 total_sent_mb += size_mb
             
                 with open(part, "rb") as f:
                     bale_send_video(chat_id, f.read(), caption=f"📦 پارت {i}")
+                    time.sleep(0.5)
+
             
             clean_temp_files(chat_id)
             user_download_cache.pop(chat_id, None)
-            
+            user_search_cache.pop(chat_id, None)
+
             bale_send_text(chat_id, f"✅ دانلود کامل شد.\n📦 مجموع حجم ارسال شده: {total_sent_mb}MB")
             
             return
@@ -672,7 +686,7 @@ def handle_bale_update(upd):
         file_path = info["file_path"]
         file_url = f"https://tapi.bale.ai/file/bot{BALE_TOKEN}/{file_path}"
     
-        file_bytes = requests.get(file_url).content
+        file_bytes = requests.get(file_url, timeout=20).content
     
         temp_path = "data/_restore_backup.json"
         with open(temp_path, "wb") as f:
@@ -706,10 +720,11 @@ def handle_bale_update(upd):
                 "🔌 اتصال شما به تلگرام به‌طور کامل قطع شد."
             )
             token = get_link_by_bale(chat_id)
-            pair = get_pair(token)
-            
-            if pair and pair["tg_user_id"]:
-                tg_send_text(pair["tg_user_id"], "شما از اشتراک خود در بله خارج شدید بنابرین لینک اتصال شما غیرفعال شده و اتصال شما با بله قطع شده است! ")
+            if token:
+                pair = get_pair(token)
+                
+                if pair and pair["tg_user_id"]:
+                    tg_send_text(pair["tg_user_id"], "شما از اشتراک خود در بله خارج شدید بنابرین لینک اتصال شما غیرفعال شده و اتصال شما با بله قطع شده است! ")
                 
         else:
             bale_send_text(chat_id, "⚠️ شما اشتراک فعالی نداشتید.")
@@ -916,7 +931,7 @@ def handle_bale_update(upd):
     
             bale_send_photo(
                 chat_id,
-                requests.get(info["thumbnail"]).content,
+                requests.get(info["thumbnail"], timeout=10).content,
                 caption=info["title"]
             )
     
@@ -951,7 +966,10 @@ def handle_bale_update(upd):
         
         # سرچ
         videos = youtube_search(query)
-    
+        if not videos:
+            bale_send_text(chat_id,"❌ نتیجه‌ای یافت نشد.")
+            return
+        
         user_search_cache[chat_id] = {
             "query": query,
             "page": 0,
@@ -1029,7 +1047,7 @@ def handle_bale_update(upd):
             file_type = "audio"
     
         elif "document" in msg:
-            file_obj = msg["document"][-1]
+            file_obj = msg["document"]
             file_type = "document"
     
         elif "file" in msg:
@@ -1050,7 +1068,7 @@ def handle_bale_update(upd):
         file_name = info.get("file_name", "file.bin")
     
         file_url = f"https://tapi.bale.ai/file/bot{BALE_TOKEN}/{file_path}"
-        file_bytes = requests.get(file_url).content
+        file_bytes = requests.get(file_url, timeout=20).content
         add_user_volume(chat_id, len(file_bytes))
     
         if file_type == "photo":
