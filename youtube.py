@@ -17,7 +17,14 @@ user_download_cache = {}
 # yt-dlp command (stable for servers)
 # ============================================================
 
-YTDLP_CMD = ["python", "-m", "yt_dlp", "--no-check-certificates"]
+YTDLP_CMD = [
+    "python", "-m", "yt_dlp",
+    "--no-check-certificates",
+    "--geo-bypass",
+    "--geo-bypass-country", "US",
+    "--default-search", "ytsearch",
+    "--user-agent", "Mozilla/5.0"
+]
 
 # ============================================================
 # تشخیص لینک یوتیوب
@@ -61,33 +68,12 @@ def youtube_search(query, limit=10, page=0):
         print("yt-dlp search timeout")
         return []
 
-    if proc.returncode != 0:
-        print("YT-DLP SEARCH ERROR:", proc.stderr)
-        return []
+    print("STDERR:", proc.stderr)   # برای دیباگ روی Render
 
     if not proc.stdout.strip():
         print("YT-DLP returned empty output")
         return []
 
-    videos = []
-
-    for line in proc.stdout.splitlines():
-        try:
-            d = json.loads(line)
-
-            videos.append({
-                "id": d.get("id"),
-                "title": d.get("title", "Unknown title"),
-                "duration": d.get("duration", 0),
-                "thumbnail": d.get("thumbnail"),
-                "url": d.get("webpage_url")
-            })
-
-        except Exception as e:
-            print("JSON parse error:", e)
-
-    start = page * limit
-    return videos[start:start + limit]
 
 # ============================================================
 # اطلاعات ویدیو
