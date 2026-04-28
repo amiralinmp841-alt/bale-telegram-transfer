@@ -48,13 +48,22 @@ def youtube_suggestions(query):
 def youtube_search(query, limit=10, page=0):
     """Search YouTube videos using yt-dlp"""
 
-    search_str = f"ytsearch{limit * (page+1)}:{query}"
+    search_str = f"ytsearch{limit}:{query}"
 
     proc = subprocess.run(
         ["yt-dlp", "--dump-json", search_str],
         capture_output=True,
         text=True
     )
+
+    # اگر yt-dlp خطا داد
+    if proc.returncode != 0:
+        print("YT-DLP ERROR:", proc.stderr)
+        return []
+
+    if not proc.stdout.strip():
+        print("YT-DLP returned empty output")
+        return []
 
     videos = []
 
@@ -63,17 +72,18 @@ def youtube_search(query, limit=10, page=0):
             d = json.loads(line)
 
             videos.append({
-                "id": d["id"],
-                "title": d["title"],
+                "id": d.get("id"),
+                "title": d.get("title"),
                 "duration": d.get("duration", 0),
                 "thumbnail": d.get("thumbnail"),
-                "url": d["webpage_url"]
+                "url": d.get("webpage_url")
             })
-        except:
-            pass
+        except Exception as e:
+            print("JSON parse error:", e)
 
     start = page * limit
     return videos[start:start + limit]
+
 
 # ============================================================
 # اطلاعات ویدیو برای لینک مستقیم
