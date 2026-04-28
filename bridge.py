@@ -3,8 +3,6 @@ import os
 import requests
 import time
 import threading
-import io
-import zipfile
 
 from db_manager import (
     create_link_for_bale, get_link_by_bale, activate_link,
@@ -21,6 +19,19 @@ from db_manager import make_backup
 from db_manager import restore_backup
 from db_manager import cleanup_old_backups
 
+from youtube import (
+    is_youtube_url,
+    youtube_search,
+    youtube_suggestions,
+    get_video_info,
+    get_video_formats,
+    download_video,
+    split_video_ffmpeg,
+    clean_temp_files,
+    user_state,
+    user_search_cache,
+    user_download_cache
+)
 
 
 # =============================
@@ -30,9 +41,6 @@ TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN")
 BALE_TOKEN = os.environ.get("BALE_TOKEN")
 TELEGRAM_BOT_USERNAME = os.environ.get("TELEGRAM_BOT_USERNAME")  # بدون @
 ADMIN_BALE_ID = int(os.environ.get("ADMIN_BALE_ID"))
-BALE_GROUP_ID = int(os.environ.get("BALE_GROUP_ID"))
-ZIP_PART_SIZE_MB = int(os.environ.get("ZIP_PART_SIZE_MB", "18"))
-ZIP_PART_SIZE = ZIP_PART_SIZE_MB * 1024 * 1024
 
 
 if not TELEGRAM_TOKEN or not BALE_TOKEN or not TELEGRAM_BOT_USERNAME:
@@ -56,6 +64,7 @@ BALE_KEYBOARD = {
     "keyboard": [
         [{"text": "دریافت لینک"}],
         [{"text": "تغییر لینک و قطع اتصال"}],
+        [{"text": "🔎 جست و جوی یوتیوب"}],
         [{"text": "اشتراک من"}],
         [{"text": "حذف اتومات"}],   # ✔ جدید
         [{"text": "🚪 خروج از اشتراک"}]
@@ -63,61 +72,6 @@ BALE_KEYBOARD = {
     "resize_keyboard": True
 }
 
-# ===============================================
-# ===== up 20 mb down ===========================
-# ===============================================
-
-def split_to_zip_parts(file_bytes: bytes, original_name: str, part_size: int):
-    parts = []
-    total_size = len(file_bytes)
-    offset = 0
-    idx = 1
-
-    while offset < total_size:
-        chunk = file_bytes[offset: offset + part_size]
-        offset += part_size
-
-        mem = io.BytesIO()
-        with zipfile.ZipFile(mem, "w", zipfile.ZIP_DEFLATED) as zf:
-            zf.writestr(original_name, chunk)
-
-        mem.seek(0)
-        parts.append((idx, mem.read()))
-        idx += 1
-
-    return parts
-
-def send_large_file_as_zip_to_bale(
-    file_bytes: bytes,
-    original_name: str,
-    tg_user: dict,
-    caption: str = None
-):
-    parts = split_to_zip_parts(file_bytes, original_name, ZIP_PART_SIZE)
-    total = len(parts)
-
-    # ✅ شناسنامه
-    header = (
-        "📦 فایل بزرگ دریافتی از تلگرام\n\n"
-        f"👤 کاربر: @{tg_user.get('username') or tg_user.get('id')}\n"
-        f"📄 نام فایل: {original_name}\n"
-        f"🧩 تعداد پارت: {total}\n"
-        f"📦 هر پارت: {ZIP_PART_SIZE_MB}MB\n"
-    )
-    if caption:
-        header += f"\n📝 کپشن:\n{caption}"
-
-    bale_send_text(BALE_GROUP_ID, header)
-
-    # ✅ ارسال ZIPها
-    for idx, zip_bytes in parts:
-        bale_send_document(
-            BALE_GROUP_ID,
-            zip_bytes,
-            f"{original_name}.part{idx}.zip",
-            caption=f"📦 پارت {idx}/{total}"
-        )
-        time.sleep(0.6)
 
 # =============================
 # Telegram send helpers
@@ -245,7 +199,7 @@ def telegram_polling_loop():
         except Exception as e:
             print("TG Error:", e)
 
-        time.sleep(0.4)
+        time.sleep(1)
 
 
 def bale_polling_loop():
@@ -265,7 +219,7 @@ def bale_polling_loop():
         except Exception as e:
             print("Bale Error:", e)
 
-        time.sleep(0.4)
+        time.sleep(1)
 
 
 def delete_after_delay(chat_id, message_id):
@@ -413,31 +367,6 @@ def handle_telegram_update(upd):
     
         file_path = file_info["file_path"]
         file_bytes = requests.get(TG_FILE + file_path).content
-        # 🔁 فقط فایل‌های بزرگ‌تر از حد مجاز بله
-        if len(file_bytes) > ZIP_PART_SIZE:
-            try:
-                send_large_file_as_zip_to_bale(
-                    file_bytes=file_bytes,
-                    original_name=file_path.split("/")[-1],
-                    tg_user=msg.get("from", {}),
-                    caption=caption
-                )
-        
-                tg_send_text(
-                    chat_id,
-                    "✅ فایل بزرگ دریافت شد و به‌صورت ZIPهای چندبخشی در گروه بله ارسال شد."
-                )
-        
-            except Exception as e:
-                print("ZIP SEND ERROR:", e)
-                tg_send_text(
-                    chat_id,
-                    "❌ خطا در پردازش فایل بزرگ. لطفاً دوباره تلاش کنید."
-                )
-        
-            # ⛔ فقط برای فایل بزرگ برگرد
-            return
-        
         # 📊 ثبت مصرف حجم فایل
         result = add_user_volume(bale_user, len(file_bytes))
 
@@ -521,10 +450,9 @@ def handle_telegram_update(upd):
                     daemon=True
                 ).start()
     
-    except Exception as e:
-        print("TG → BALE FILE ERROR:", repr(e))
-        tg_send_text(chat_id, f"❌ خطا در ارسال فایل به بله.\n\n{e}")
-
+    except Exception:
+        tg_send_text(chat_id, "❌ ارسال فایل به بله ناموفق بود. احتمالاً حجم بیش از حد است.")
+    
 
 
 # =============================
@@ -532,6 +460,177 @@ def handle_telegram_update(upd):
 # =============================
 
 def handle_bale_update(upd):
+
+
+    # -----------------------------------------------
+    # ✅ HANDLE INLINE BUTTONS (Callback Queries)
+    # -----------------------------------------------
+    if "callback_query" in upd:
+        cb = upd["callback_query"]
+        data = cb.get("data", "")
+        chat_id = cb["message"]["chat"]["id"]
+
+        # ✅ کلیک روی پیشنهاد
+        if data.startswith("yt_suggest|"):
+            query = data.split("|",1)[1]
+        
+            user_search_cache[chat_id] = {
+                "query": query,
+                "page": 0
+            }
+        
+            videos = youtube_search(query)
+        
+            for v in videos:
+                bale_send_photo(
+                    chat_id,
+                    requests.get(v["thumbnail"], timeout=10).content,
+                    caption=v["title"]
+                )
+        
+                bale_send_text(
+                    chat_id,
+                    "⬇️ دانلود",
+                    reply_markup={
+                        "inline_keyboard":[[
+                            {"text":"دریافت ویدیو","callback_data":f"yt_download|{v['url']}"}
+                        ]]
+                    }
+                )
+        
+            bale_send_text(
+                chat_id,
+                "ویدیوهای بیشتر:",
+                reply_markup={
+                    "inline_keyboard":[[
+                        {"text":"▶️ ویدیوهای بعدی","callback_data":"yt_next"}
+                    ]]
+                }
+            )
+            return
+    
+    
+        # ✅ دانلود ویدیو
+        if data.startswith("yt_download|"):
+            url = data.split("|", 1)[1]
+    
+            user_download_cache[chat_id] = {"url": url}
+    
+            formats = get_video_formats(url)
+    
+            if not formats:
+                bale_send_text(chat_id, "❌ کیفیتی پیدا نشد.")
+                return
+    
+            buttons = []
+            for f in formats[:8]:  # حداکثر ۸ کیفیت
+                text_btn = f"{f['quality']} - {round(f['size'],1)}MB"
+                buttons.append([{
+                    "text": text_btn,
+                    "callback_data": f"yt_quality|{f['id']}"
+                }])
+    
+            bale_send_text(
+                chat_id,
+                "🎞 کیفیت مورد نظر را انتخاب کن:",
+                reply_markup={"inline_keyboard": buttons}
+            )
+            return
+    
+        # ✅ انتخاب کیفیت
+        if data.startswith("yt_quality|"):
+            fmt_id = data.split("|", 1)[1]
+    
+            info = user_download_cache.get(chat_id)
+            if not info:
+                bale_send_text(chat_id, "❌ خطا، دوباره تلاش کن.")
+                return
+    
+            url = info["url"]
+    
+            path = download_video(url, fmt_id, chat_id)
+            
+            if not path:
+                bale_send_text(chat_id, "❌ خطا در دانلود.")
+                user_download_cache.pop(chat_id,None)
+                return
+            
+            bale_send_text(chat_id, "✂️ در حال تقسیم فایل...")
+            
+            parts = split_video_ffmpeg(path, chat_id)
+            
+                        
+            total_sent_mb = 0
+            
+            for i, part in enumerate(parts, 1):
+                size = os.path.getsize(part)
+                size_mb = round(size / (1024 * 1024), 2)
+            
+                # 📌 ثبت مصرف
+                result = add_user_volume(chat_id, size)
+            
+                if result == "warn_80":
+                    bale_send_text(chat_id, "⚠️ مصرف شما به ۸۰٪ رسیده.")
+                elif result == "expired":
+                    bale_send_text(chat_id, "❌ حجم اشتراک شما تمام شد.")
+                    return  # ارسال ادامه نمی‌یابد
+            
+                total_sent_mb += size_mb
+            
+                with open(part, "rb") as f:
+                    bale_send_video(chat_id, f.read(), caption=f"📦 پارت {i}")
+            
+            clean_temp_files(chat_id)
+            user_download_cache.pop(chat_id, None)
+            
+            bale_send_text(chat_id, f"✅ دانلود کامل شد.\n📦 مجموع حجم ارسال شده: {total_sent_mb}MB")
+            
+            return
+    
+        # ✅ ویدیوهای بعدی
+        if data == "yt_next":
+            cache = user_search_cache.get(chat_id)
+            if not cache:
+                return
+    
+            cache["page"] += 1
+            query = cache["query"]
+            page = cache["page"]
+    
+            videos = youtube_search(query, page=page)
+    
+            if not videos:
+                bale_send_text(chat_id, "❌ ویدیوی بیشتری یافت نشد.")
+                return
+    
+            for v in videos:
+                bale_send_photo(
+                    chat_id,
+                    requests.get(v["thumbnail"], timeout=10).content,
+                    caption=v["title"]
+                )
+    
+                bale_send_text(
+                    chat_id,
+                    "⬇️ دانلود",
+                    reply_markup={
+                        "inline_keyboard":[[
+                            {"text":"دریافت ویدیو","callback_data":f"yt_download|{v['url']}"}
+                        ]]
+                    }
+                )
+    
+            bale_send_text(
+                chat_id,
+                "ویدیوهای بیشتر:",
+                reply_markup={
+                    "inline_keyboard":[[
+                        {"text":"▶️ ویدیوهای بعدی","callback_data":"yt_next"}
+                    ]]
+                }
+            )
+            return
+
     msg = upd.get("message")
     if not msg:
         return
@@ -606,8 +705,12 @@ def handle_bale_update(upd):
                 "✅ از اشتراک خارج شدید.\n"
                 "🔌 اتصال شما به تلگرام به‌طور کامل قطع شد."
             )
-            tg_send_text(chat_id, "شما از اشتراک خود در بله خارج شدید بنابرین لینک اتصال شما غیرفعال شده و اتصال شما با بله قطع شده است! ")
-
+            token = get_link_by_bale(chat_id)
+            pair = get_pair(token)
+            
+            if pair and pair["tg_user_id"]:
+                tg_send_text(pair["tg_user_id"], "شما از اشتراک خود در بله خارج شدید بنابرین لینک اتصال شما غیرفعال شده و اتصال شما با بله قطع شده است! ")
+                
         else:
             bale_send_text(chat_id, "⚠️ شما اشتراک فعالی نداشتید.")
     
@@ -789,7 +892,98 @@ def handle_bale_update(upd):
         bale_send_text(chat_id, text)
         return
 
+    if text == "🔎 جست و جوی یوتیوب":
     
+        user_state[chat_id] = "youtube_search"
+    
+        bale_send_text(
+            chat_id,
+            "🔎 متن جستجوی یوتیوب یا لینک ویدیو را ارسال کن.\n\nبرای خروج /cancel بزن."
+        )
+    
+        return
+    
+    if user_state.get(chat_id) == "youtube_search":
+    
+        query = text
+    
+        user_state.pop(chat_id)
+    
+        # لینک مستقیم
+        if is_youtube_url(query):
+    
+            info = get_video_info(query)
+    
+            bale_send_photo(
+                chat_id,
+                requests.get(info["thumbnail"]).content,
+                caption=info["title"]
+            )
+    
+            bale_send_text(
+                chat_id,
+                "🎬 برای دانلود روی دکمه زیر بزن",
+                reply_markup={
+                    "inline_keyboard":[[
+                        {"text":"دریافت ویدیو","callback_data":f"yt_download|{query}"}
+                    ]]
+                }
+            )
+    
+            return
+
+        # ✅ پیشنهادها
+        suggestions = youtube_suggestions(query)
+        
+        if suggestions:
+            buttons = []
+            for s in suggestions[:5]:
+                buttons.append([{
+                    "text": s,
+                    "callback_data": f"yt_suggest|{s}"
+                }])
+        
+            bale_send_text(
+                chat_id,
+                "🔎 پیشنهادهای مشابه:",
+                reply_markup={"inline_keyboard": buttons}
+            )
+        
+        # سرچ
+        videos = youtube_search(query)
+    
+        user_search_cache[chat_id] = {
+            "query": query,
+            "page": 0,
+            "videos": videos
+        }
+    
+        for v in videos:
+    
+            bale_send_photo(
+                chat_id,
+                requests.get(v["thumbnail"], timeout=10).content,
+                caption=v["title"]
+            )
+    
+            bale_send_text(
+                chat_id,
+                "⬇️ دانلود",
+                reply_markup={
+                    "inline_keyboard":[[
+                        {"text":"دریافت ویدیو","callback_data":f"yt_download|{v['url']}"}
+                    ]]
+                }
+            )
+    
+        return
+    
+    if text == "/cancel":
+        user_state.pop(chat_id, None)
+        user_search_cache.pop(chat_id, None)
+        user_download_cache.pop(chat_id, None)
+        bale_send_text(chat_id, "❌ عملیات لغو شد.", reply_markup=BALE_KEYBOARD)
+        return
     
     
     # -----------------------------------------------
