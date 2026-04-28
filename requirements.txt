@@ -1,3 +1,4 @@
 requests
 flask
 yt-dlp>=2024.01.01
+gunicorn
