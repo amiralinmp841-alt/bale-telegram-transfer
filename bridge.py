@@ -32,7 +32,8 @@ from youtube import (
     clean_temp_files,
     user_state,
     user_search_cache,
-    user_download_cache
+    user_download_cache,
+    user_video_cache
 )
 
 
@@ -471,6 +472,7 @@ def handle_bale_update(upd):
     if "callback_query" in upd:
         cb = upd["callback_query"]
         data = cb.get("data", "")
+        print("CALLBACK DATA:", data)
         chat_id = cb["message"]["chat"]["id"]
 
         # ✅ کلیک روی پیشنهاد
@@ -488,7 +490,9 @@ def handle_bale_update(upd):
                 bale_send_text(chat_id,"❌ نتیجه‌ای یافت نشد.")
                 return
             
-            for v in videos:
+            user_video_cache[chat_id] = videos   # ذخیره کل لیست
+            
+            for i, v in enumerate(videos):
             
                 title = v["title"]
             
@@ -507,12 +511,13 @@ def handle_bale_update(upd):
                             "inline_keyboard":[[
                                 {
                                     "text":"⬇️ دریافت ویدیو",
-                                    "callback_data":f"yt_download|{v['url']}"
+                                    "callback_data":f"yt_download|{i}"    # دیگر URL کامل نیست → فقط index
                                 }
                             ]]
                         })
                     }
                 )
+            
                     
             
             bale_send_text(
@@ -530,9 +535,22 @@ def handle_bale_update(upd):
     
         # ✅ دانلود ویدیو
         if data.startswith("yt_download|"):
-            url = data.split("|", 1)[1]
-    
+        
+            try:
+                idx = int(data.split("|", 1)[1])
+            except:
+                bale_send_text(chat_id, "❌ خطای نامعتبر.")
+                return
+                    
+            videos = user_video_cache.get(chat_id, [])
+            if idx >= len(videos):
+                bale_send_text(chat_id, "❌ خطا! لینک پیدا نشد.")
+                return
+        
+            url = videos[idx]["url"]   # URL واقعی از کش گرفته می‌شود
+        
             user_download_cache[chat_id] = {"url": url}
+        
     
             formats = get_video_formats(url)
     
@@ -610,6 +628,7 @@ def handle_bale_update(upd):
             clean_temp_files(chat_id)
             user_download_cache.pop(chat_id, None)
             user_search_cache.pop(chat_id, None)
+            user_video_cache.pop(chat_id, None)
 
             bale_send_text(chat_id, f"✅ دانلود کامل شد.\n📦 مجموع حجم ارسال شده: {total_sent_mb}MB")
             
@@ -631,8 +650,9 @@ def handle_bale_update(upd):
                 bale_send_text(chat_id, "❌ ویدیوی بیشتری یافت نشد.")
                 return
     
-            for v in videos:
+            user_video_cache[chat_id] = videos
             
+            for i, v in enumerate(videos):
                 title = v["title"]
             
                 requests.post(
@@ -650,12 +670,13 @@ def handle_bale_update(upd):
                             "inline_keyboard":[[
                                 {
                                     "text":"⬇️ دریافت ویدیو",
-                                    "callback_data":f"yt_download|{v['url']}"
+                                    "callback_data":f"yt_download|{i}"
                                 }
                             ]]
                         })
                     }
                 )
+            
                 
             
             # ✅ فقط یک بار
