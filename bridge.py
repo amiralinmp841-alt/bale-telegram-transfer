@@ -472,7 +472,7 @@ def handle_bale_update(upd):
     if "callback_query" in upd:
         cb = upd["callback_query"]
         data = cb.get("data", "")
-        print("CALLBACK DATA:", data)
+        print("RAW CALLBACK:", repr(data), flush=True)   # ← همینجا
         chat_id = cb["message"]["chat"]["id"]
 
         # ✅ کلیک روی پیشنهاد
