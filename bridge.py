@@ -1016,8 +1016,9 @@ def handle_bale_update(upd):
         if not videos:
             bale_send_text(chat_id,"❌ نتیجه‌ای یافت نشد.")
             return
-        
-        for v in videos:
+
+        user_video_cache[chat_id] = videos
+        for i, v in enumerate(videos):
         
             title = v["title"]
         
@@ -1036,7 +1037,7 @@ def handle_bale_update(upd):
                         "inline_keyboard":[[
                             {
                                 "text":"⬇️ دریافت ویدیو",
-                                "callback_data":f"yt_download|{v['url']}"
+                                "callback_data": f"yt_download|{i}"
                             }
                         ]]
                     })
