@@ -6,7 +6,9 @@ import os
 import re
 import time
 import threading
+import random
 from urllib.parse import quote_plus
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 # ============================================================
 # USER STATES & CACHE
@@ -28,10 +30,16 @@ proxy_cache = {
 
 proxy_lock = threading.Lock()
 
+
+# فقط IP:PORT واقعی
+PROXY_REGEX = re.compile(
+    r"^("
+    r"(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)\.){3}"
+    r"(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d):"
+    r"([0-9]{1,5})$"
+)
+
 def get_free_proxies():
-    """
-    دریافت پروکسی از چندین API → ادغام → حذف تکراری‌ها → خروجی نهایی
-    """
 
     urls = [
         "https://www.proxy-list.download/api/v1/get?type=https",
@@ -47,43 +55,44 @@ def get_free_proxies():
     for u in urls:
         try:
             print(f"[PROXY] Fetching from: {u}", flush=True)
-            r = requests.get(u, timeout=8)
-            txt = r.text.strip()
-            for line in txt.split("\n"):
+            r = requests.get(u, timeout=6)
+
+            # تبدیل نکن، فقط همان raw lines
+            for line in r.text.splitlines():
                 line = line.strip()
-                if ":" in line:
+
+                # اگر خط فقط شامل IP:PORT بود
+                if PROXY_REGEX.match(line):
                     proxies.add(line)
-        except:
-            pass
+
+        except Exception as e:
+            print(f"[PROXY] Error fetching {u}: {e}", flush=True)
+            continue
 
     proxies = list(proxies)
-    print(f"[PROXY] Total fetched: {len(proxies)}", flush=True)
+    print(f"[PROXY] VALID proxies: {len(proxies)}", flush=True)
 
-    # مخلوط کردن برای کاهش احتمال خطا
-    import random
+    # محدودیت تعداد
     random.shuffle(proxies)
+    return proxies[:150]
 
-    # محدود به 200 تا (کافیه)
-    return proxies[:200]
 
 
 def test_proxy(proxy):
-    """
-    بررسی اینکه پروکسی واقعا با یوتیوب کار میکند.
-    """
+    proxies = {
+        "http": f"http://{proxy}",
+        "https": f"http://{proxy}"
+    }
     try:
-        proxies = {
-            "http": f"http://{proxy}",
-            "https": f"http://{proxy}"
-        }
         r = requests.get(
-            "https://www.youtube.com",
+            "https://www.youtube.com/favicon.ico",
             proxies=proxies,
-            timeout=5
+            timeout=3   # قبلا 10 بود → Hang
         )
         return r.status_code == 200
     except:
         return False
+
 
 def get_working_proxy():
     """
@@ -448,3 +457,5 @@ def clean_temp_files(chat_id):
                 os.remove("/tmp/" + f)
             except Exception as e:
                 print("cleanup error:", e)
+
+
