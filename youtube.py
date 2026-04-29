@@ -138,43 +138,42 @@ def get_video_formats(url):
 
     try:
         proc = subprocess.run(
-            YTDLP_CMD + ["-F", url],
+            YTDLP_CMD + ["-J", url],
             capture_output=True,
             text=True,
             timeout=60
         )
-    except subprocess.TimeoutExpired:
-        print("format fetch timeout")
+
+        data = json.loads(proc.stdout)
+
+    except:
         return []
 
     formats = []
 
-    for line in proc.stdout.splitlines():
+    for f in data.get("formats", []):
 
-        if ("mp4" in line) and ("video only" not in line):
+        if f.get("ext") != "mp4":
+            continue
 
-            parts = line.split()
-            if not parts:
-                continue
+        if f.get("vcodec") == "none":
+            continue
 
-            fmt_id = parts[0]
+        height = f.get("height")
+        if not height:
+            continue
 
-            match = re.search(r"(\d{3,4}p)", line)
-            if not match:
-                continue
+        size = f.get("filesize") or 0
+        size_mb = round(size/(1024*1024),2)
 
-            quality = match.group(1)
-
-            size_match = re.search(r"~?(\d+(\.\d+)?)MiB", line)
-            size_mb = float(size_match.group(1)) if size_match else 0
-
-            formats.append({
-                "id": fmt_id,
-                "quality": quality,
-                "size": size_mb
-            })
+        formats.append({
+            "id": f["format_id"],
+            "quality": f"{height}p",
+            "size": size_mb
+        })
 
     return formats
+
 
 # ============================================================
 # دانلود ویدیو
