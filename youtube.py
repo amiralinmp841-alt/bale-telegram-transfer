@@ -56,27 +56,48 @@ def youtube_suggestions(query):
 def youtube_search(query, limit=10, page=0):
 
     try:
-        url = f"https://ytsearch.vercel.app/api/search?q={quote_plus(query)}"
 
-        r = requests.get(url, timeout=10)
-        data = r.json()
+        url = "https://www.youtube.com/results"
+
+        params = {
+            "search_query": query
+        }
+
+        headers = {
+            "User-Agent": "Mozilla/5.0"
+        }
+
+        r = requests.get(url, params=params, headers=headers, timeout=10)
+
+        html = r.text
+
+        video_ids = re.findall(r"watch\?v=(\S{11})", html)
 
         videos = []
+        seen = set()
 
-        for v in data.get("videos", [])[:limit]:
+        for vid in video_ids:
+
+            if vid in seen:
+                continue
+
+            seen.add(vid)
 
             videos.append({
-                "id": v.get("videoId"),
-                "title": v.get("title"),
-                "duration": v.get("duration"),
-                "thumbnail": v.get("thumbnail"),
-                "url": f"https://youtube.com/watch?v={v.get('videoId')}"
+                "id": vid,
+                "title": "YouTube Video",
+                "duration": 0,
+                "thumbnail": f"https://i.ytimg.com/vi/{vid}/hqdefault.jpg",
+                "url": f"https://youtube.com/watch?v={vid}"
             })
+
+            if len(videos) >= limit:
+                break
 
         return videos
 
     except Exception as e:
-        print("SEARCH API ERROR:", e)
+        print("SEARCH ERROR:", e)
         return []
 
 
