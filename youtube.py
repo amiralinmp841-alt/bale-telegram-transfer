@@ -4,6 +4,8 @@ import subprocess
 import json
 import os
 import re
+import time
+import threading
 from urllib.parse import quote_plus
 
 # ============================================================
@@ -14,6 +16,106 @@ user_state = {}
 user_search_cache = {}
 user_download_cache = {}
 user_video_cache = {}   # {chat_id: [list of videos]}
+
+# ============================================================
+# PROXY SYSTEM (AUTO + CACHE 10 minutes)
+# ============================================================
+
+proxy_cache = {
+    "proxy": None,
+    "expires": 0
+}
+
+proxy_lock = threading.Lock()
+
+def get_free_proxies():
+    """
+    دریافت پروکسی از چندین API → ادغام → حذف تکراری‌ها → خروجی نهایی
+    """
+
+    urls = [
+        "https://www.proxy-list.download/api/v1/get?type=https",
+        "https://api.proxyscrape.com/?request=getproxies&proxytype=http&timeout=3000",
+        "https://raw.githubusercontent.com/TheSpeedX/PROXY-List/master/http.txt",
+        "https://raw.githubusercontent.com/ShiftyTR/Proxy-List/master/http.txt",
+        "https://www.proxyscan.io/download?type=http",
+        "https://openproxy.space/list/http"
+    ]
+
+    proxies = set()
+
+    for u in urls:
+        try:
+            print(f"[PROXY] Fetching from: {u}", flush=True)
+            r = requests.get(u, timeout=8)
+            txt = r.text.strip()
+            for line in txt.split("\n"):
+                line = line.strip()
+                if ":" in line:
+                    proxies.add(line)
+        except:
+            pass
+
+    proxies = list(proxies)
+    print(f"[PROXY] Total fetched: {len(proxies)}", flush=True)
+
+    # مخلوط کردن برای کاهش احتمال خطا
+    import random
+    random.shuffle(proxies)
+
+    # محدود به 200 تا (کافیه)
+    return proxies[:200]
+
+
+def test_proxy(proxy):
+    """
+    بررسی اینکه پروکسی واقعا با یوتیوب کار میکند.
+    """
+    try:
+        proxies = {
+            "http": f"http://{proxy}",
+            "https": f"http://{proxy}"
+        }
+        r = requests.get(
+            "https://www.youtube.com",
+            proxies=proxies,
+            timeout=5
+        )
+        return r.status_code == 200
+    except:
+        return False
+
+def get_working_proxy():
+    """
+    اگر پروکسی سالم در کش داریم → همان.
+    اگر نه → پروکسی‌های جدید را تست و سالم‌ترین را ذخیره می‌کنیم.
+    """
+    with proxy_lock:
+
+        now = time.time()
+
+        # اگر کش معتبر است:
+        if proxy_cache["proxy"] and proxy_cache["expires"] > now:
+            print(f"[CACHE] Using cached proxy: {proxy_cache['proxy']}", flush=True)
+            return proxy_cache["proxy"]
+
+        # اگر کش منقضی شده، پروکسی جدید پیدا کن
+        print("[PROXY] Fetching new proxy list...", flush=True)
+        lst = get_free_proxies()
+
+        for proxy in lst:
+            print(f"[PROXY] Testing {proxy}", flush=True)
+
+            if test_proxy(proxy):
+                print(f"[PROXY] OK: {proxy}", flush=True)
+
+                proxy_cache["proxy"] = proxy
+                proxy_cache["expires"] = now + 600  # ← 10 دقیقه
+
+                return proxy
+
+        print("[PROXY] No working proxy found", flush=True)
+        return None
 
 
 # ============================================================
@@ -146,47 +248,74 @@ def get_video_info(url):
 # ============================================================
 
 def get_video_formats(url):
+    """
+    سعی می‌کند با پروکسی سالم yt-dlp را اجرا کند.
+    اگر پروکسی خراب بود → پروکسی بعدی را امتحان می‌کند.
+    """
 
-    try:
-        proc = subprocess.run(
-            YTDLP_CMD + ["-J", url],
-            capture_output=True,
-            text=True,
-            timeout=60
-        )
-        print("YT-DLP RETURN CODE:", proc.returncode)
-        print("YT-DLP STDOUT:", proc.stdout[:500])  # فقط ۵۰۰ کاراکتر اول
-        print("YT-DLP STDERR:", proc.stderr)
+    # 3 بار تلاش با 3 پروکسی مختلف
+    for attempt in range(3):
 
-        data = json.loads(proc.stdout)
+        proxy = get_working_proxy()
 
-    except:
-        return []
+        if proxy is None:
+            print("NO WORKING PROXY (PROXY None)", flush=True)
+            return None
 
-    formats = []
+        print(f"[YT-DLP] Using proxy: {proxy}", flush=True)
 
-    for f in data.get("formats", []):
+        cmd = YTDLP_CMD + [
+            "--proxy", f"http://{proxy}",
+            "-J", url
+        ]
 
-        if f.get("vcodec") == "none":
-            continue
+        try:
+            proc = subprocess.run(
+                cmd,
+                capture_output=True,
+                text=True,
+                timeout=60
+            )
 
-        height = f.get("height")
-        if not height:
-            continue
+            print("YT-DLP RETURN CODE:", proc.returncode, flush=True)
+            print("YT-DLP STDERR:", proc.stderr[:200], flush=True)
 
-        size = f.get("filesize") or f.get("filesize_approx") or 0
-        size_mb = round(size/(1024*1024),2)
+            if proc.returncode == 0:
+                # موفق
+                try:
+                    data = json.loads(proc.stdout)
+                    fmt_list = []
+                    for f in data.get("formats", []):
+                        if f.get("vcodec") == "none":
+                            continue
+                        h = f.get("height")
+                        if not h:
+                            continue
+                        size = f.get("filesize") or f.get("filesize_approx") or 0
+                        fmt_list.append({
+                            "id": f["format_id"],
+                            "quality": f"{h}p",
+                            "size": round(size/(1024*1024), 2)
+                        })
+                    fmt_list = sorted(fmt_list, key=lambda x: int(x["quality"].replace("p","")))
+                    return fmt_list[:6]
+                except:
+                    return None
 
-        formats.append({
-            "id": f["format_id"],
-            "quality": f"{height}p",
-            "size": size_mb
-        })
+            # اگر خطای 429 / پروکسی بلاک
+            if "429" in proc.stderr or "Sign in to confirm" in proc.stderr:
+                print("[PROXY] Proxy blocked. rotating...", flush=True)
+                proxy_cache["expires"] = 0  # پروکسی باطل
+                continue  # پروکسی بعدی
 
-    # مرتب سازی کیفیت
-    formats = sorted(formats, key=lambda x: int(x["quality"].replace("p","")))
+            # خطاهای دیگر
+            return None
 
-    return formats[:6]
+        except Exception as e:
+            print("YT-DLP ERROR:", e, flush=True)
+
+    # اگر ۳ بار تلاش شکست خورد
+    return None
 
 
 
@@ -195,28 +324,55 @@ def get_video_formats(url):
 # ============================================================
 
 def download_video(url, fmt_id, chat_id):
+    """
+    دانلود با پروکسی سالم + در صورت Fail پروکسی بعدی امتحان شود.
+    """
 
     out = f"/tmp/video_{chat_id}.mp4"
 
-    try:
-        subprocess.run(
-            YTDLP_CMD + [
-                "-f", f"{fmt_id}+bestaudio/best",
-                "--merge-output-format", "mp4",
-                "-o", out,
-                url
-            ],
-            timeout=600
-        )
-    except subprocess.TimeoutExpired:
-        print("download timeout")
-        return None
+    for attempt in range(3):
 
-    if not os.path.exists(out):
-        print("download failed, file not found")
-        return None
+        proxy = get_working_proxy()
 
-    return out
+        if proxy is None:
+            print("NO PROXY FOR DOWNLOAD", flush=True)
+            return None
+
+        print(f"[DOWNLOAD] Using proxy: {proxy}", flush=True)
+
+        cmd = YTDLP_CMD + [
+            "--proxy", f"http://{proxy}",
+            "-f", f"{fmt_id}+bestaudio/best",
+            "--merge-output-format", "mp4",
+            "-o", out,
+            url
+        ]
+
+        try:
+            proc = subprocess.run(
+                cmd,
+                capture_output=True,
+                text=True,
+                timeout=500
+            )
+
+            print("DOWNLOAD CODE:", proc.returncode, flush=True)
+
+            if proc.returncode == 0:
+                if os.path.exists(out):
+                    return out
+
+            # خطای پروکسی بلاک
+            if "429" in proc.stderr or "Sign in" in proc.stderr:
+                print("[DOWNLOAD] Proxy blocked → rotate", flush=True)
+                proxy_cache["expires"] = 0
+                continue
+
+        except:
+            pass
+
+    return None
+
 
 
 # ============================================================
