@@ -215,6 +215,35 @@ def process_video_download(chat_id, url, fmt_id):
         print("THREAD ERROR:", e)
         bale_send_text(chat_id, "❌ خطای داخلی.")
 
+def process_get_formats(chat_id, url):
+
+    try:
+        formats = get_video_formats(url)
+
+        if not formats:
+            bale_send_text(chat_id, "❌ کیفیتی پیدا نشد.")
+            return
+
+        buttons = []
+
+        for f in formats[:8]:
+            text_btn = f"{f['quality']} - {round(f['size'],1)}MB"
+            buttons.append([{
+                "text": text_btn,
+                "callback_data": f"yt_quality|{f['id']}"
+            }])
+
+        bale_send_text(
+            chat_id,
+            "🎞 کیفیت مورد نظر را انتخاب کن:",
+            reply_markup={"inline_keyboard": buttons}
+        )
+
+    except Exception as e:
+        print("FORMAT THREAD ERROR:", e)
+        bale_send_text(chat_id, "❌ خطا در دریافت کیفیت‌ها.")
+
+
 # =============================
 # POLLING LOOPS
 # =============================
@@ -584,12 +613,16 @@ def handle_bale_update(upd):
         
             user_download_cache[chat_id] = {"url": url}
         
-    
-            formats = get_video_formats(url)
-    
-            if not formats:
-                bale_send_text(chat_id, "❌ کیفیتی پیدا نشد.")
-                return
+            bale_send_text(chat_id, "⏳ در حال دریافت کیفیت‌ها...")
+            
+            threading.Thread(
+                target=process_get_formats,
+                args=(chat_id, url),
+                daemon=True
+            ).start()
+            
+            return
+            
     
             buttons = []
             for f in formats[:8]:  # حداکثر ۸ کیفیت
