@@ -13,6 +13,8 @@ from urllib.parse import quote_plus
 user_state = {}
 user_search_cache = {}
 user_download_cache = {}
+user_video_cache = {}   # {chat_id: [list of videos]}
+
 
 # ============================================================
 # yt-dlp command (stable for servers)
@@ -155,7 +157,7 @@ def get_video_formats(url):
         print("YT-DLP RETURN CODE:", proc.returncode)
         print("YT-DLP STDOUT:", proc.stdout[:500])  # فقط ۵۰۰ کاراکتر اول
         print("YT-DLP STDERR:", proc.stderr)
-        
+
         data = json.loads(proc.stdout)
 
     except:
