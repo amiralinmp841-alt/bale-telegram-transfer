@@ -74,7 +74,7 @@ def get_free_proxies():
 
     # محدودیت تعداد
     random.shuffle(proxies)
-    return proxies[:150]
+    return proxies[:40]
 
 
 
@@ -95,36 +95,36 @@ def test_proxy(proxy):
 
 
 def get_working_proxy():
-    """
-    اگر پروکسی سالم در کش داریم → همان.
-    اگر نه → پروکسی‌های جدید را تست و سالم‌ترین را ذخیره می‌کنیم.
-    """
-    with proxy_lock:
 
-        now = time.time()
+    now = time.time()
 
-        # اگر کش معتبر است:
-        if proxy_cache["proxy"] and proxy_cache["expires"] > now:
-            print(f"[CACHE] Using cached proxy: {proxy_cache['proxy']}", flush=True)
-            return proxy_cache["proxy"]
+    # اول بدون lock بررسی کش
+    if proxy_cache["proxy"] and proxy_cache["expires"] > now:
+        print(f"[CACHE] Using cached proxy: {proxy_cache['proxy']}", flush=True)
+        return proxy_cache["proxy"]
 
-        # اگر کش منقضی شده، پروکسی جدید پیدا کن
-        print("[PROXY] Fetching new proxy list...", flush=True)
-        lst = get_free_proxies()
+    print("[PROXY] Fetching new proxy list...", flush=True)
 
-        for proxy in lst:
-            print(f"[PROXY] Testing {proxy}", flush=True)
+    lst = get_free_proxies()
 
-            if test_proxy(proxy):
-                print(f"[PROXY] OK: {proxy}", flush=True)
+    for proxy in lst:
 
+        print(f"[PROXY] Testing {proxy}", flush=True)
+
+        if test_proxy(proxy):
+
+            print(f"[PROXY] OK: {proxy}", flush=True)
+
+            # فقط این قسمت lock می‌خواهد
+            with proxy_lock:
                 proxy_cache["proxy"] = proxy
-                proxy_cache["expires"] = now + 600  # ← 10 دقیقه
+                proxy_cache["expires"] = now + 600
 
-                return proxy
+            return proxy
 
-        print("[PROXY] No working proxy found", flush=True)
-        return None
+    print("[PROXY] No working proxy found", flush=True)
+    return None
+
 
 
 # ============================================================
