@@ -1,3 +1,4 @@
+#youtube.py #youtube.py #youtube.py #youtube.py #youtube.py #youtube.py #youtube.py #youtube.py #youtube.py #youtube.py 
 import requests
 import subprocess
 import json
@@ -161,9 +162,6 @@ def get_video_formats(url):
 
     for f in data.get("formats", []):
 
-        if f.get("ext") != "mp4":
-            continue
-
         if f.get("vcodec") == "none":
             continue
 
@@ -171,7 +169,7 @@ def get_video_formats(url):
         if not height:
             continue
 
-        size = f.get("filesize") or 0
+        size = f.get("filesize") or f.get("filesize_approx") or 0
         size_mb = round(size/(1024*1024),2)
 
         formats.append({
@@ -180,7 +178,11 @@ def get_video_formats(url):
             "size": size_mb
         })
 
-    return formats
+    # مرتب سازی کیفیت
+    formats = sorted(formats, key=lambda x: int(x["quality"].replace("p","")))
+
+    return formats[:6]
+
 
 
 # ============================================================
