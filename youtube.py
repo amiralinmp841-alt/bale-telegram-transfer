@@ -55,23 +55,28 @@ def youtube_suggestions(query):
 
 def youtube_search(query, limit=10, page=0):
 
-    search_str = f"ytsearch{limit}:{query}"
-
     try:
-        proc = subprocess.run(
-            YTDLP_CMD + ["--dump-json", search_str],
-            capture_output=True,
-            text=True,
-            timeout=60
-        )
-    except subprocess.TimeoutExpired:
-        print("yt-dlp search timeout")
-        return []
+        url = f"https://ytsearch.vercel.app/api/search?q={quote_plus(query)}"
 
-    print("STDERR:", proc.stderr)   # برای دیباگ روی Render
+        r = requests.get(url, timeout=10)
+        data = r.json()
 
-    if not proc.stdout.strip():
-        print("YT-DLP returned empty output")
+        videos = []
+
+        for v in data.get("videos", [])[:limit]:
+
+            videos.append({
+                "id": v.get("videoId"),
+                "title": v.get("title"),
+                "duration": v.get("duration"),
+                "thumbnail": v.get("thumbnail"),
+                "url": f"https://youtube.com/watch?v={v.get('videoId')}"
+            })
+
+        return videos
+
+    except Exception as e:
+        print("SEARCH API ERROR:", e)
         return []
 
 
