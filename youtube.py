@@ -42,7 +42,11 @@ def youtube_suggestions(query):
     url = f"https://suggestqueries.google.com/complete/search?client=youtube&ds=yt&q={quote_plus(query)}"
 
     try:
-        r = requests.get(url, timeout=5)
+        r = requests.get(
+            url,
+            headers={"User-Agent":"Mozilla/5.0"},
+            timeout=5
+        )
         data = json.loads(r.text[19:-1])
         return data[1]
     except Exception as e:
@@ -71,34 +75,38 @@ def youtube_search(query, limit=10, page=0):
 
         html = r.text
 
-        video_ids = re.findall(r"watch\?v=(\S{11})", html)
+        # استخراج videoRenderer
+        matches = re.findall(
+            r'"videoId":"(.*?)".*?"title":\{"runs":\[\{"text":"(.*?)"\}\]',
+            html
+        )
 
-        videos = []
+        results = []
         seen = set()
 
-        for vid in video_ids:
+        for vid, title in matches:
 
             if vid in seen:
                 continue
 
             seen.add(vid)
 
-            videos.append({
+            results.append({
                 "id": vid,
-                "title": "YouTube Video",
-                "duration": 0,
+                "title": title,
                 "thumbnail": f"https://i.ytimg.com/vi/{vid}/hqdefault.jpg",
                 "url": f"https://youtube.com/watch?v={vid}"
             })
 
-            if len(videos) >= limit:
-                break
+        start = page * limit
+        end = start + limit
 
-        return videos
+        return results[start:end]
 
     except Exception as e:
         print("SEARCH ERROR:", e)
         return []
+
 
 
 # ============================================================
