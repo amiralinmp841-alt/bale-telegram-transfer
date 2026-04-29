@@ -502,20 +502,17 @@ def handle_bale_update(upd):
                     },
                     data={
                         "chat_id": chat_id,
-                        "caption": title
-                    },
-                    json={
-                        "reply_markup":{
+                        "caption": title,
+                        "reply_markup": json.dumps({
                             "inline_keyboard":[[
                                 {
                                     "text":"⬇️ دریافت ویدیو",
                                     "callback_data":f"yt_download|{v['url']}"
                                 }
                             ]]
-                        }
+                        })
                     }
                 )
-                
                     
             
             bale_send_text(
@@ -538,8 +535,6 @@ def handle_bale_update(upd):
             user_download_cache[chat_id] = {"url": url}
     
             formats = get_video_formats(url)
-            print("DOWNLOAD BUTTON CLICKED:", data)
-
     
             if not formats:
                 bale_send_text(chat_id, "❌ کیفیتی پیدا نشد.")
@@ -650,20 +645,17 @@ def handle_bale_update(upd):
                     },
                     data={
                         "chat_id": chat_id,
-                        "caption": title
-                    },
-                    json={
-                        "reply_markup":{
+                        "caption": title,
+                        "reply_markup": json.dumps({
                             "inline_keyboard":[[
                                 {
                                     "text":"⬇️ دریافت ویدیو",
                                     "callback_data":f"yt_download|{v['url']}"
                                 }
                             ]]
-                        }
+                        })
                     }
                 )
-                
                 
             
             # ✅ فقط یک بار
@@ -1018,20 +1010,17 @@ def handle_bale_update(upd):
                 },
                 data={
                     "chat_id": chat_id,
-                    "caption": title
-                },
-                json={
-                    "reply_markup":{
+                    "caption": title,
+                    "reply_markup": json.dumps({
                         "inline_keyboard":[[
                             {
                                 "text":"⬇️ دریافت ویدیو",
                                 "callback_data":f"yt_download|{v['url']}"
                             }
                         ]]
-                    }
+                    })
                 }
             )
-            
             
         
         bale_send_text(
