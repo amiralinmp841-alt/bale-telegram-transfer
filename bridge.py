@@ -182,6 +182,39 @@ def bale_send_document(chat_id, file_bytes, file_name, caption=None):
         data={"chat_id": chat_id, "caption": caption or ""}
     )
 
+def process_video_download(chat_id, url, fmt_id):
+    try:
+        path = download_video(url, fmt_id, chat_id)
+        if not path:
+            bale_send_text(chat_id, "❌ خطا در دانلود.")
+            return
+
+        bale_send_text(chat_id, "✂️ در حال تقسیم فایل...")
+
+        parts = split_video_ffmpeg(path, chat_id)
+        if not parts:
+            bale_send_text(chat_id, "❌ خطا در تقسیم.")
+            clean_temp_files(chat_id)
+            return
+
+        total_sent_mb = 0
+
+        for i, part in enumerate(parts, 1):
+            size = os.path.getsize(part)
+            size_mb = round(size / (1024*1024), 2)
+            total_sent_mb += size_mb
+
+            with open(part, "rb") as f:
+                bale_send_video(chat_id, f.read(), caption=f"📦 پارت {i}")
+
+        clean_temp_files(chat_id)
+
+        bale_send_text(chat_id, f"✅ تکمیل شد.\n📦 حجم: {total_sent_mb}MB")
+
+    except Exception as e:
+        print("THREAD ERROR:", e)
+        bale_send_text(chat_id, "❌ خطای داخلی.")
+
 # =============================
 # POLLING LOOPS
 # =============================
@@ -584,55 +617,15 @@ def handle_bale_update(upd):
     
             url = info["url"]
     
-            path = download_video(url, fmt_id, chat_id)
+            threading.Thread(
+                target=process_video_download,
+                args=(chat_id, url, fmt_id),
+                daemon=True
+            ).start()
             
-            if not path:
-                bale_send_text(chat_id, "❌ خطا در دانلود.")
-                user_download_cache.pop(chat_id,None)
-                return
+            bale_send_text(chat_id, "⏳ دانلود در صف انجام شد...\nمی‌تونی همزمان از ربات استفاده کنی ✅")
+            return   # ✅✅✅ خیلی مهم
             
-            bale_send_text(chat_id, "✂️ در حال تقسیم فایل...")
-            
-            parts = split_video_ffmpeg(path, chat_id)
-            if not parts:
-                bale_send_text(chat_id, "❌ خطا در تقسیم ویدیو.")
-                clean_temp_files(chat_id)
-                user_download_cache.pop(chat_id, None)
-                return
-                        
-            total_sent_mb = 0
-            
-            for i, part in enumerate(parts, 1):
-                size = os.path.getsize(part)
-                size_mb = round(size / (1024 * 1024), 2)
-            
-                # 📌 ثبت مصرف
-                result = add_user_volume(chat_id, size)
-            
-                if result == "warn_80":
-                    bale_send_text(chat_id, "⚠️ مصرف شما به ۸۰٪ رسیده.")
-                elif result == "expired":
-                    bale_send_text(chat_id, "❌ حجم اشتراک شما تمام شد.")
-                    clean_temp_files(chat_id)
-                    user_download_cache.pop(chat_id, None)
-                    user_search_cache.pop(chat_id, None)
-                    return  # ارسال ادامه نمی‌یابد
-            
-                total_sent_mb += size_mb
-            
-                with open(part, "rb") as f:
-                    bale_send_video(chat_id, f.read(), caption=f"📦 پارت {i}")
-                    time.sleep(0.5)
-
-            
-            clean_temp_files(chat_id)
-            user_download_cache.pop(chat_id, None)
-            user_search_cache.pop(chat_id, None)
-            user_video_cache.pop(chat_id, None)
-
-            bale_send_text(chat_id, f"✅ دانلود کامل شد.\n📦 مجموع حجم ارسال شده: {total_sent_mb}MB")
-            
-            return
     
         # ✅ ویدیوهای بعدی
         if data == "yt_next":
