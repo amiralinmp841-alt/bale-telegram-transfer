@@ -152,7 +152,10 @@ def get_video_formats(url):
             text=True,
             timeout=60
         )
-
+        print("YT-DLP RETURN CODE:", proc.returncode)
+        print("YT-DLP STDOUT:", proc.stdout[:500])  # فقط ۵۰۰ کاراکتر اول
+        print("YT-DLP STDERR:", proc.stderr)
+        
         data = json.loads(proc.stdout)
 
     except:
@@ -195,7 +198,12 @@ def download_video(url, fmt_id, chat_id):
 
     try:
         subprocess.run(
-            YTDLP_CMD + ["-f", fmt_id, "-o", out, url],
+            YTDLP_CMD + [
+                "-f", f"{fmt_id}+bestaudio/best",
+                "--merge-output-format", "mp4",
+                "-o", out,
+                url
+            ],
             timeout=600
         )
     except subprocess.TimeoutExpired:
@@ -207,6 +215,7 @@ def download_video(url, fmt_id, chat_id):
         return None
 
     return out
+
 
 # ============================================================
 # split با ffmpeg
