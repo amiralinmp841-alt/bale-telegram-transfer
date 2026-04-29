@@ -4,6 +4,7 @@ import requests
 import time
 import threading
 
+
 from db_manager import (
     create_link_for_bale, get_link_by_bale, activate_link,
     get_link_by_telegram, get_pair, deactivate,
@@ -49,6 +50,7 @@ if not TELEGRAM_TOKEN or not BALE_TOKEN or not TELEGRAM_BOT_USERNAME:
 TG_API = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/"
 TG_FILE = f"https://api.telegram.org/file/bot{TELEGRAM_TOKEN}/"
 BALE_API = f"https://tapi.bale.ai/bot{BALE_TOKEN}/"
+http = requests.Session()
 
 # =============================
 # KEYBOARDS
@@ -480,41 +482,49 @@ def handle_bale_update(upd):
             }
         
             videos = youtube_search(query)
+            
             if not videos:
+                bale_send_text(chat_id,"❌ نتیجه‌ای یافت نشد.")
+                return
+            
+            for v in videos:
+            
+                title = v["title"]
+            
                 requests.post(
                     BALE_API + "sendPhoto",
                     files={
-                        "photo": (
+                        "photo":(
                             "photo.jpg",
-                            requests.get(v["thumbnail"], timeout=10).content
+                            http.get(v["thumbnail"], timeout=10).content
                         )
                     },
                     data={
                         "chat_id": chat_id,
-                        "caption": v["title"]
-                    },
-                    json={
-                        "reply_markup":{
+                        "caption": title,
+                        "reply_markup": json.dumps({
                             "inline_keyboard":[[
                                 {
                                     "text":"⬇️ دریافت ویدیو",
                                     "callback_data":f"yt_download|{v['url']}"
                                 }
                             ]]
-                        }
+                        })
                     }
                 )
-        
-                bale_send_text(
-                    chat_id,
-                    "ویدیوهای بیشتر:",
-                    reply_markup={
-                        "inline_keyboard":[[
-                            {"text":"▶️ ویدیوهای بعدی","callback_data":"yt_next"}
-                        ]]
-                    }
-                )
-                return
+                    
+            
+            bale_send_text(
+                chat_id,
+                "ویدیوهای بیشتر:",
+                reply_markup={
+                    "inline_keyboard":[[
+                        {"text":"▶️ ویدیوهای بعدی","callback_data":"yt_next"}
+                    ]]
+                }
+            )
+            return
+            
     
     
         # ✅ دانلود ویدیو
@@ -622,44 +632,42 @@ def handle_bale_update(upd):
     
             for v in videos:
             
-                info = get_video_info(v["url"])
-                title = info.get("title", "YouTube Video")
+                title = v["title"]
             
                 requests.post(
                     BALE_API + "sendPhoto",
                     files={
                         "photo":(
                             "photo.jpg",
-                            requests.get(v["thumbnail"], timeout=10).content
+                            http.get(v["thumbnail"], timeout=10).content
                         )
                     },
                     data={
                         "chat_id": chat_id,
-                        "caption": title
-                    },
-                    json={
-                        "reply_markup":{
+                        "caption": title,
+                        "reply_markup": json.dumps({
                             "inline_keyboard":[[
                                 {
                                     "text":"⬇️ دریافت ویدیو",
                                     "callback_data":f"yt_download|{v['url']}"
                                 }
                             ]]
-                        }
+                        })
                     }
                 )
+                
             
-    
-                bale_send_text(
-                    chat_id,
-                    "ویدیوهای بیشتر:",
-                    reply_markup={
-                        "inline_keyboard":[[
-                            {"text":"▶️ ویدیوهای بعدی","callback_data":"yt_next"}
-                        ]]
-                    }
-                )
-                return
+            # ✅ فقط یک بار
+            bale_send_text(
+                chat_id,
+                "ویدیوهای بیشتر:",
+                reply_markup={
+                    "inline_keyboard":[[
+                        {"text":"▶️ ویدیوهای بعدی","callback_data":"yt_next"}
+                    ]]
+                }
+            )
+            return
 
     msg = upd.get("message")
     if not msg:
@@ -982,54 +990,53 @@ def handle_bale_update(upd):
         
         # سرچ
         videos = youtube_search(query)
+        
         if not videos:
             bale_send_text(chat_id,"❌ نتیجه‌ای یافت نشد.")
             return
         
-        user_search_cache[chat_id] = {
-            "query": query,
-            "page": 0,
-            "videos": videos
-        }
-    
         for v in videos:
         
-            info = get_video_info(v["url"])
-            title = info.get("title", "YouTube Video")
+            title = v["title"]
         
             requests.post(
                 BALE_API + "sendPhoto",
                 files={
                     "photo":(
                         "photo.jpg",
-                        requests.get(v["thumbnail"], timeout=10).content
+                        http.get(v["thumbnail"], timeout=10).content
                     )
                 },
                 data={
                     "chat_id": chat_id,
-                    "caption": title
-                },
-                json={
-                    "reply_markup":{
+                    "caption": title,
+                    "reply_markup": json.dumps({
                         "inline_keyboard":[[
                             {
                                 "text":"⬇️ دریافت ویدیو",
                                 "callback_data":f"yt_download|{v['url']}"
                             }
                         ]]
-                    }
+                    })
                 }
             )
-            bale_send_text(
-                chat_id,
-                "ویدیوهای بیشتر:",
-                reply_markup={
-                    "inline_keyboard":[[
-                        {"text":"▶️ ویدیوهای بعدی","callback_data":"yt_next"}
-                    ]]
-                }
-            )
-    
+            
+        
+        bale_send_text(
+            chat_id,
+            "ویدیوهای بیشتر:",
+            reply_markup={
+                "inline_keyboard":[[
+                    {"text":"▶️ ویدیوهای بعدی","callback_data":"yt_next"}
+                ]]
+            }
+        )
+        
+        user_search_cache[chat_id] = {
+            "query": query,
+            "page": 0
+        }
+        
         return
     
     if text == "/cancel":
