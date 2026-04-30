@@ -29,6 +29,17 @@ proxy_cache = {
 }
 
 proxy_lock = threading.Lock()
+proxy_pool = []
+proxy_scores = {}
+building_pool = False
+pool_lock = threading.Lock()
+
+MAX_TEST_WORKERS = 25
+PROXY_TEST_TIMEOUT = 3
+POOL_SIZE = 10
+PROXY_REFRESH_INTERVAL = 300
+MIN_POOL_SIZE = 3
+background_proxy_thread_started = False
 
 
 # فقط IP:PORT واقعی
@@ -79,51 +90,171 @@ def get_free_proxies():
 
 
 def test_proxy(proxy):
+
     proxies = {
         "http": f"http://{proxy}",
         "https": f"http://{proxy}"
     }
+
     try:
+
+        start = time.time()
+
         r = requests.get(
             "https://www.youtube.com/favicon.ico",
             proxies=proxies,
-            timeout=3   # قبلا 10 بود → Hang
+            timeout=PROXY_TEST_TIMEOUT
         )
-        return r.status_code == 200
+
+        latency = time.time() - start
+
+        if r.status_code == 200:
+            return (proxy, latency)
+
     except:
-        return False
+        pass
+
+    return None
+
+def build_proxy_pool():
+
+    global proxy_pool
+    global proxy_scores
+    global building_pool
+
+    with pool_lock:
+        if building_pool:
+            return
+        building_pool = True
+
+    print("[PROXY] ULTRA Building proxy pool...", flush=True)
+
+    proxies = get_free_proxies()
+    results = []
+
+    with ThreadPoolExecutor(max_workers=MAX_TEST_WORKERS) as executor:
+        futures = [executor.submit(test_proxy, p) for p in proxies]
+
+        for future in as_completed(futures):
+            res = future.result()
+            if res:
+                proxy, latency = res
+                results.append((proxy, latency))
+                print(f"[PROXY] OK {proxy} {latency:.2f}s", flush=True)
+
+    if results:
+
+        results.sort(key=lambda x: x[1])
+        best = results[:POOL_SIZE]
+
+        new_pool = []
+        new_scores = {}
+
+        for p, lat in best:
+            new_pool.append(p)
+            new_scores[p] = lat
+
+        proxy_pool[:] = new_pool
+        proxy_scores.clear()
+        proxy_scores.update(new_scores)
+
+        print(f"[PROXY] ULTRA Pool ready ({len(proxy_pool)})", flush=True)
+
+    building_pool = False
+
+def proxy_background_worker():
+
+    global proxy_pool
+
+    while True:
+
+        try:
+
+            if len(proxy_pool) < MIN_POOL_SIZE:
+
+                print("[PROXY] Pool low → rebuilding...", flush=True)
+                build_proxy_pool()
+
+            else:
+
+                print("[PROXY] Background refresh...", flush=True)
+                build_proxy_pool()
+
+        except Exception as e:
+
+            print("[PROXY] Background error:", e, flush=True)
+
+        time.sleep(PROXY_REFRESH_INTERVAL)
+
+
+def start_proxy_background_thread():
+
+    global background_proxy_thread_started
+
+    if background_proxy_thread_started:
+        return
+
+    t = threading.Thread(
+        target=proxy_background_worker,
+        daemon=True
+    )
+
+    t.start()
+
+    background_proxy_thread_started = True
+
+    print("[PROXY] Background proxy refresher started", flush=True)
 
 
 def get_working_proxy():
 
+    start_proxy_background_thread()
+
     now = time.time()
 
-    # اول بدون lock بررسی کش
     if proxy_cache["proxy"] and proxy_cache["expires"] > now:
-        print(f"[CACHE] Using cached proxy: {proxy_cache['proxy']}", flush=True)
         return proxy_cache["proxy"]
 
-    print("[PROXY] Fetching new proxy list...", flush=True)
+    if not proxy_pool:
+        build_proxy_pool()
+        if not proxy_pool:
+            return None
 
-    lst = get_free_proxies()
+    # انتخاب سریع‌ترین proxy
+    sorted_proxies = sorted(proxy_pool, key=lambda p: proxy_scores.get(p, 999))
+    proxy = sorted_proxies[0]
 
-    for proxy in lst:
+    with proxy_lock:
+        proxy_cache["proxy"] = proxy
+        proxy_cache["expires"] = now + 180  # کوتاه‌تر = هوشمندتر
 
-        print(f"[PROXY] Testing {proxy}", flush=True)
+    return proxy
 
-        if test_proxy(proxy):
 
-            print(f"[PROXY] OK: {proxy}", flush=True)
 
-            # فقط این قسمت lock می‌خواهد
-            with proxy_lock:
-                proxy_cache["proxy"] = proxy
-                proxy_cache["expires"] = now + 600
+def remove_bad_proxy(proxy):
 
-            return proxy
+    global proxy_pool
+    global proxy_scores
 
-    print("[PROXY] No working proxy found", flush=True)
-    return None
+    if proxy in proxy_pool:
+
+        proxy_pool.remove(proxy)
+
+        if proxy in proxy_scores:
+            del proxy_scores[proxy]
+
+        print(f"[PROXY] Removed bad proxy {proxy}", flush=True)
+
+        if len(proxy_pool) < MIN_POOL_SIZE:
+
+            print("[PROXY] Pool low → rebuild triggered", flush=True)
+
+            threading.Thread(
+                target=build_proxy_pool,
+                daemon=True
+            ).start()
+
 
 
 
@@ -137,7 +268,13 @@ YTDLP_CMD = [
     "--geo-bypass",
     "--geo-bypass-country", "US",
     "--default-search", "ytsearch",
-    "--user-agent", "Mozilla/5.0"
+    "--user-agent", "Mozilla/5.0",
+    "--concurrent-fragments", "5",
+    "--socket-timeout", "15",
+    "--retries", "3",
+    "--no-playlist",
+    "--no-warnings",
+    "--quiet"
 ]
 
 # ============================================================
@@ -283,7 +420,7 @@ def get_video_formats(url):
                 cmd,
                 capture_output=True,
                 text=True,
-                timeout=60
+                timeout=40
             )
 
             print("YT-DLP RETURN CODE:", proc.returncode, flush=True)
@@ -314,7 +451,8 @@ def get_video_formats(url):
             # اگر خطای 429 / پروکسی بلاک
             if "429" in proc.stderr or "Sign in to confirm" in proc.stderr:
                 print("[PROXY] Proxy blocked. rotating...", flush=True)
-                proxy_cache["expires"] = 0  # پروکسی باطل
+                remove_bad_proxy(proxy)
+                proxy_cache["expires"] = 0
                 continue  # پروکسی بعدی
 
             # خطاهای دیگر
@@ -362,7 +500,7 @@ def download_video(url, fmt_id, chat_id):
                 cmd,
                 capture_output=True,
                 text=True,
-                timeout=500
+                timeout=300
             )
 
             print("DOWNLOAD CODE:", proc.returncode, flush=True)
@@ -374,7 +512,9 @@ def download_video(url, fmt_id, chat_id):
             # خطای پروکسی بلاک
             if "429" in proc.stderr or "Sign in" in proc.stderr:
                 print("[DOWNLOAD] Proxy blocked → rotate", flush=True)
+                remove_bad_proxy(proxy)
                 proxy_cache["expires"] = 0
+
                 continue
 
         except:
