@@ -290,7 +290,7 @@ def test_proxy_download_latency(proxy, timeout=3):
 def proxy_health_monitor():
     global proxy_cache
 
-    LATENCY_THRESHOLD = 1.0  # ثانیه
+    LATENCY_THRESHOLD = 5.0  # ثانیه
 
     while True:
         time.sleep(3)
@@ -501,32 +501,36 @@ def get_video_formats(url):
 
                 # ---------- پیدا کردن بهترین AUDIO ----------
                 if f.get("vcodec") == "none" and f.get("acodec") != "none":
-                    abr = f.get("abr") or 0
+                
+                    abr = f.get("abr") or f.get("tbr") or 0
+                    size = f.get("filesize") or f.get("filesize_approx") or 0
+                
                     if not best_audio or abr > best_audio["abr"]:
-                        size = f.get("filesize") or f.get("filesize_approx") or 0
                         best_audio = {
                             "id": f["format_id"],
                             "abr": abr,
-                            "size": round(size / (1024 * 1024), 1)
+                            "size": round(size / (1024*1024), 1)
                         }
+                
 
                 # ---------- جمع کردن VIDEO+AUD ----------
-                if f.get("vcodec") == "none":
-                    continue
-                if f.get("acodec") == "none":
-                    continue
-                if not f.get("height"):
-                    continue
-
-                h = f["height"]
-
-                if h not in formats:
+                # --- جمع‌آوری ویدیوها (video-only و mixed هر دو) ---
+                if f.get("vcodec") != "none" and f.get("height"):
+                
+                    h = f["height"]
                     size = f.get("filesize") or f.get("filesize_approx") or 0
-                    formats[h] = {
-                        "id": f["format_id"],
-                        "quality": f"{h}p",
-                        "size": round(size / (1024 * 1024), 1)
-                    }
+                
+                    # اگر mixed باشد (h264 + aac) → اولویت دارد
+                    is_mixed = (f.get("acodec") != "none")
+                
+                    if h not in formats or is_mixed:
+                        formats[h] = {
+                            "id": f["format_id"],
+                            "quality": f"{h}p",
+                            "size": round(size / (1024*1024), 1),
+                            "mixed": is_mixed
+                        }
+                
 
             result = sorted(
                 formats.values(),
