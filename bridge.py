@@ -226,11 +226,21 @@ def process_get_formats(chat_id, url):
 
         buttons = []
 
-        for f in formats[:8]:
-            text_btn = f"{f['quality']} - {round(f['size'],1)}MB"
+        # --- 1) دکمه دریافت صوت ---
+        audio = formats.get("audio")
+        if audio:
+            audio_text = f"🎵 دریافت فایل صوتی ({audio['size']} MB)"
+            buttons.append([{
+                "text": audio_text,
+                "callback_data": f"yt_audio|{audio['id']}"
+            }])
+
+        # --- 2) دکمه‌های کیفیت‌های ویدیو ---
+        for v in formats["videos"][:8]:
+            text_btn = f"{v['quality']} - {round(v['size'],1)}MB"
             buttons.append([{
                 "text": text_btn,
-                "callback_data": f"yt_quality|{f['id']}"
+                "callback_data": f"yt_quality|{v['id']}"
             }])
 
         bale_send_text(
@@ -242,6 +252,44 @@ def process_get_formats(chat_id, url):
     except Exception as e:
         print("FORMAT THREAD ERROR:", e)
         bale_send_text(chat_id, "❌ خطا در دریافت کیفیت‌ها.")
+
+def process_audio_download(chat_id, url, audio_id):
+    try:
+        out = f"/tmp/audio_{chat_id}.mp3"
+
+        proxy = get_working_proxy()
+        if not proxy:
+            bale_send_text(chat_id, "❌ پروکسی در دسترس نیست.")
+            return
+
+        cmd = YTDLP_CMD + [
+            "--proxy", f"http://{proxy}",
+            "-f", audio_id,
+            "-x", "--audio-format", "mp3",
+            "-o", out,
+            url
+        ]
+
+        proc = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            timeout=200
+        )
+
+        if proc.returncode != 0:
+            bale_send_text(chat_id, "❌ خطا در دانلود صوت.")
+            print(proc.stderr)
+            return
+
+        with open(out, "rb") as f:
+            bale_send_audio(chat_id, f.read())
+
+        os.remove(out)
+
+    except Exception as e:
+        bale_send_text(chat_id, "❌ خطای داخلی در دانلود صوت.")
+        print("AUDIO ERROR:", e)
 
 
 # =============================
@@ -539,7 +587,27 @@ def handle_bale_update(upd):
 
         # ✅ کلیک روی پیشنهاد
         if data.startswith("yt_suggest|"):
-            query = data.split("|",1)[1]
+        
+            idx = int(data.split("|",1)[1])
+        
+            cache = user_search_cache.get(chat_id)
+            if not cache:
+                return
+        
+            suggestions = cache.get("suggestions", [])
+        
+            if idx >= len(suggestions):
+                return
+        
+            query = suggestions[idx]
+        
+            user_search_cache[chat_id] = {
+                "query": query,
+                "page": 0
+            }
+        
+            videos = youtube_search(query)
+        
         
             user_search_cache[chat_id] = {
                 "query": query,
@@ -659,7 +727,27 @@ def handle_bale_update(upd):
             bale_send_text(chat_id, "⏳ دانلود در صف انجام شد...\nمی‌تونی همزمان از ربات استفاده کنی ✅")
             return   # ✅✅✅ خیلی مهم
             
-    
+        # دریافت فایل صوتی
+        if data.startswith("yt_audio|"):
+            audio_id = data.split("|", 1)[1]
+        
+            info = user_download_cache.get(chat_id)
+            if not info:
+                bale_send_text(chat_id, "❌ خطا، دوباره تلاش کن.")
+                return
+        
+            url = info["url"]
+        
+            threading.Thread(
+                target=process_audio_download,
+                args=(chat_id, url, audio_id),
+                daemon=True
+            ).start()
+        
+            bale_send_text(chat_id, "🎵 صدا در صف دانلود قرار گرفت...")
+            return
+        
+        
         # ✅ ویدیوهای بعدی
         if data == "yt_next":
             cache = user_search_cache.get(chat_id)
@@ -846,12 +934,12 @@ def handle_bale_update(upd):
     # ✅ از اینجا به بعد: کاربر لاگین است
     # ===============================================
     
-    # ✅ نمایش کیبورد بدون پیام قابل‌مشاهده
-    bale_send_text(
-        chat_id,
-        "\u200b",  # Zero‑Width Space (نامرئی)
-        reply_markup=BALE_KEYBOARD
-    )
+    ## ✅ نمایش کیبورد بدون پیام قابل‌مشاهده     موقت
+    #bale_send_text(
+    #    chat_id,
+    #    "✅",  # Zero‑Width Space (نامرئی)
+    #    reply_markup=BALE_KEYBOARD
+    #)
     
     # -----------------------------------------------
     # /start = ایجاد یا دریافت لینک
@@ -862,7 +950,7 @@ def handle_bale_update(upd):
             token = create_link_for_bale(chat_id)
 
         tg_link = f"https://t.me/{TELEGRAM_BOT_USERNAME}?start={token}"
-        bale_send_text(chat_id, f"برای اتصال به تلگرام روی لینک زیر بزن:\n{tg_link}")
+        bale_send_text(chat_id, f"برای اتصال به تلگرام روی لینک زیر بزن:\n{tg_link}", reply_markup=BALE_KEYBOARD)
         return
 
     # -----------------------------------------------
@@ -1002,11 +1090,14 @@ def handle_bale_update(upd):
         query = text
     
         user_state.pop(chat_id)
+        
+
     
         # لینک مستقیم
         if is_youtube_url(query):
     
             info = get_video_info(query)
+            user_video_cache[chat_id] = [{"url": query}]
     
             bale_send_photo(
                 chat_id,
@@ -1019,7 +1110,7 @@ def handle_bale_update(upd):
                 "🎬 برای دانلود روی دکمه زیر بزن",
                 reply_markup={
                     "inline_keyboard":[[
-                        {"text":"دریافت ویدیو","callback_data":f"yt_download|{query}"}
+                        {"text":"دریافت ویدیو","callback_data":"yt_download|0"}
                     ]]
                 }
             )
@@ -1032,10 +1123,19 @@ def handle_bale_update(upd):
         if suggestions:
             buttons = []
             for s in suggestions[:5]:
-                buttons.append([{
-                    "text": s,
-                    "callback_data": f"yt_suggest|{s}"
-                }])
+                user_search_cache[chat_id] = {
+                    "query": query,
+                    "page": 0,
+                    "suggestions": suggestions
+                }
+                
+                buttons = []
+                for i, s in enumerate(suggestions[:5]):
+                    buttons.append([{
+                        "text": s,
+                        "callback_data": f"yt_suggest|{i}"
+                    }])
+                
         
             bale_send_text(
                 chat_id,
