@@ -3,6 +3,7 @@ import threading
 import time
 from flask import Flask
 from bridge import telegram_polling_loop, bale_polling_loop
+from youtube import build_proxy_pool   # ← این اضافه شود
 
 app = Flask(__name__)
 
@@ -12,12 +13,33 @@ def home():
 
 
 if __name__ == "__main__":
+
+    # --------------------------------------------------
+    #   🔥 Proxy Warmup (بهترین و صحیح‌ترین محل)
+    # --------------------------------------------------
+    threading.Thread(
+        target=build_proxy_pool,
+        daemon=True
+    ).start()
+
+    # --------------------------------------------------
     # Start Telegram polling
-    threading.Thread(target=telegram_polling_loop, daemon=True).start()
+    # --------------------------------------------------
+    threading.Thread(
+        target=telegram_polling_loop,
+        daemon=True
+    ).start()
 
+    # --------------------------------------------------
     # Start Bale polling
-    threading.Thread(target=bale_polling_loop, daemon=True).start()
+    # --------------------------------------------------
+    threading.Thread(
+        target=bale_polling_loop,
+        daemon=True
+    ).start()
 
-    # Web server for Render
+    # --------------------------------------------------
+    # Web server (Render)
+    # --------------------------------------------------
     port = int(os.environ.get("PORT", 5000))
     app.run(host="0.0.0.0", port=port)
