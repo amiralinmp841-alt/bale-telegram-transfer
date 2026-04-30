@@ -33,7 +33,8 @@ from youtube import (
     user_state,
     user_search_cache,
     user_download_cache,
-    user_video_cache
+    user_video_cache,
+    get_working_proxy
 )
 
 
@@ -1091,7 +1092,33 @@ def handle_bale_update(upd):
     
         user_state.pop(chat_id)
         
-
+        # ===== ساخت دکمه‌های پیشنهاد =====
+        suggestions = youtube_suggestions(query)
+        user_search_cache[chat_id] = {"suggestions": suggestions}
+        
+        if suggestions:
+            buttons = []
+            for i, s in enumerate(suggestions[:6]):   # حداکثر ۶ پیشنهاد
+                buttons.append([{
+                    "text": s,
+                    "callback_data": f"yt_suggest|{i}"
+                }])
+        
+            bale_send_text(
+                chat_id,
+                "🔍 پیشنهادها:",
+                reply_markup={"inline_keyboard": buttons}
+            )
+        
+        else:
+            videos = youtube_search(query)
+            if not videos:
+                bale_send_text(chat_id, "❌ نتیجه‌ای یافت نشد.")
+                return
+        
+            user_video_cache[chat_id] = videos
+            # نمایش معمول ویدیوها مثل قبل...
+        
     
         # لینک مستقیم
         if is_youtube_url(query):
