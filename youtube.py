@@ -37,7 +37,7 @@ pool_lock = threading.Lock()
 MAX_TEST_WORKERS = 25
 PROXY_TEST_TIMEOUT = 3
 POOL_SIZE = 10
-PROXY_REFRESH_INTERVAL = 120
+PROXY_REFRESH_INTERVAL = 30
 MIN_POOL_SIZE = 3
 background_proxy_thread_started = False
 
