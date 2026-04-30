@@ -37,7 +37,7 @@ pool_lock = threading.Lock()
 MAX_TEST_WORKERS = 25
 PROXY_TEST_TIMEOUT = 3
 POOL_SIZE = 10
-PROXY_REFRESH_INTERVAL = 300
+PROXY_REFRESH_INTERVAL = 60
 MIN_POOL_SIZE = 3
 background_proxy_thread_started = False
 
@@ -328,7 +328,7 @@ def youtube_search(query, limit=10, page=0):
 
         # استخراج videoRenderer
         matches = re.findall(
-            r'"videoId":"(.*?)".*?"title":\{"runs":\[\{"text":"(.*?)"\}\]',
+            r'"videoId":"(.*?)".*?"title":\{"runs":\\[\{"text":"(.*?)"\}\\]',
             html
         )
 
