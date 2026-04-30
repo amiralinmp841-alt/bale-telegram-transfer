@@ -202,16 +202,9 @@ def start_proxy_background_thread():
     t.start()
 
     background_proxy_thread_started = True
-    start_proxy_monitor_thread()
 
     print("[PROXY] Background proxy refresher started", flush=True)
 
-def start_proxy_monitor_thread():
-    t = threading.Thread(
-        target=proxy_health_monitor,
-        daemon=True
-    )
-    t.start()
 
 def get_working_proxy():
 
@@ -262,70 +255,6 @@ def remove_bad_proxy(proxy):
                 daemon=True
             ).start()
 
-def test_proxy_download_latency(proxy, timeout=3):
-    proxies = {
-        "http": f"http://{proxy}",
-        "https": f"http://{proxy}"
-    }
-
-    try:
-        start = time.time()
-
-        r = requests.get(
-            "https://r3---sn.googlevideo.com/generate_204",
-            proxies=proxies,
-            timeout=timeout,
-            stream=True
-        )
-
-        for _ in r.iter_content(chunk_size=1024):
-            break  # فقط اولین بایت
-
-        return time.time() - start
-
-    except:
-        return None
-
-
-def proxy_health_monitor():
-    global proxy_cache
-
-    LATENCY_THRESHOLD = 5.0  # ثانیه
-
-    while True:
-        time.sleep(3)
-
-        proxy = proxy_cache.get("proxy")
-        if not proxy:
-            continue
-
-        latency = test_proxy_download_latency(proxy)
-
-        if latency is None or latency > LATENCY_THRESHOLD:
-            print(f"[PROXY] Active proxy slow ({latency}) → rotating", flush=True)
-
-            # از pool به ترتیب بهترین latency قبلی
-            sorted_pool = sorted(
-                proxy_pool,
-                key=lambda p: proxy_scores.get(p, 999)
-            )
-
-            switched = False
-
-            for p in sorted_pool:
-                test_lat = test_proxy_download_latency(p)
-                if test_lat and test_lat <= LATENCY_THRESHOLD:
-                    with proxy_lock:
-                        proxy_cache["proxy"] = p
-                        proxy_cache["expires"] = time.time() + 180
-                    print(f"[PROXY] Switched to {p} ({test_lat:.2f}s)", flush=True)
-                    switched = True
-                    break
-                else:
-                    remove_bad_proxy(p)
-
-            if not switched:
-                print("[PROXY] No good proxy found, waiting for rebuild", flush=True)
 
 
 
@@ -465,12 +394,21 @@ def get_video_info(url):
 # ============================================================
 
 def get_video_formats(url):
+    """
+    سعی می‌کند با پروکسی سالم yt-dlp را اجرا کند.
+    اگر پروکسی خراب بود → پروکسی بعدی را امتحان می‌کند.
+    """
 
+    # 3 بار تلاش با 3 پروکسی مختلف
     for attempt in range(3):
 
         proxy = get_working_proxy()
-        if not proxy:
+
+        if proxy is None:
+            print("NO WORKING PROXY (PROXY None)", flush=True)
             return None
+
+        print(f"[YT-DLP] Using proxy: {proxy}", flush=True)
 
         cmd = YTDLP_CMD + [
             "--proxy", f"http://{proxy}",
@@ -485,69 +423,46 @@ def get_video_formats(url):
                 timeout=40
             )
 
-            if proc.returncode != 0:
-                if "429" in proc.stderr or "Sign in" in proc.stderr:
-                    remove_bad_proxy(proxy)
-                    proxy_cache["expires"] = 0
-                    continue
-                return None
+            print("YT-DLP RETURN CODE:", proc.returncode, flush=True)
+            print("YT-DLP STDERR:", proc.stderr[:200], flush=True)
 
-            data = json.loads(proc.stdout)
-
-            formats = {}
-            best_audio = None
-
-            for f in data.get("formats", []):
-
-                # ---------- پیدا کردن بهترین AUDIO ----------
-                if f.get("vcodec") == "none" and f.get("acodec") != "none":
-                
-                    abr = f.get("abr") or f.get("tbr") or 0
-                    size = f.get("filesize") or f.get("filesize_approx") or 0
-                
-                    if not best_audio or abr > best_audio["abr"]:
-                        best_audio = {
-                            "id": f["format_id"],
-                            "abr": abr,
-                            "size": round(size / (1024*1024), 1)
-                        }
-                
-
-                # ---------- جمع کردن VIDEO+AUD ----------
-                # --- جمع‌آوری ویدیوها (video-only و mixed هر دو) ---
-                if f.get("vcodec") != "none" and f.get("height"):
-                
-                    h = f["height"]
-                    size = f.get("filesize") or f.get("filesize_approx") or 0
-                
-                    # اگر mixed باشد (h264 + aac) → اولویت دارد
-                    is_mixed = (f.get("acodec") != "none")
-                
-                    if h not in formats or is_mixed:
-                        formats[h] = {
+            if proc.returncode == 0:
+                # موفق
+                try:
+                    data = json.loads(proc.stdout)
+                    fmt_list = []
+                    for f in data.get("formats", []):
+                        if f.get("vcodec") == "none":
+                            continue
+                        h = f.get("height")
+                        if not h:
+                            continue
+                        size = f.get("filesize") or f.get("filesize_approx") or 0
+                        fmt_list.append({
                             "id": f["format_id"],
                             "quality": f"{h}p",
-                            "size": round(size / (1024*1024), 1),
-                            "mixed": is_mixed
-                        }
-                
+                            "size": round(size/(1024*1024), 2)
+                        })
+                    fmt_list = sorted(fmt_list, key=lambda x: int(x["quality"].replace("p","")))
+                    return fmt_list[:6]
+                except:
+                    return None
 
-            result = sorted(
-                formats.values(),
-                key=lambda x: int(x["quality"].replace("p","")),
-                reverse=True
-            )
+            # اگر خطای 429 / پروکسی بلاک
+            if "429" in proc.stderr or "Sign in to confirm" in proc.stderr:
+                print("[PROXY] Proxy blocked. rotating...", flush=True)
+                remove_bad_proxy(proxy)
+                proxy_cache["expires"] = 0
+                continue  # پروکسی بعدی
 
-            return {
-                "audio": best_audio,
-                "videos": result[:6]
-            }
+            # خطاهای دیگر
+            return None
 
         except Exception as e:
-            print("FORMAT ERROR:", e)
+            print("YT-DLP ERROR:", e, flush=True)
 
+    # اگر ۳ بار تلاش شکست خورد
     return None
-
 
 
 
