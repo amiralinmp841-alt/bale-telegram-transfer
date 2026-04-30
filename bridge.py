@@ -846,12 +846,12 @@ def handle_bale_update(upd):
     # ✅ از اینجا به بعد: کاربر لاگین است
     # ===============================================
     
-    ## ✅ نمایش کیبورد بدون پیام قابل‌مشاهده
-    #bale_send_text(
-    #    chat_id,
-    #    "\u200b",  # Zero‑Width Space (نامرئی)
-    #    reply_markup=BALE_KEYBOARD
-    #)
+    # ✅ نمایش کیبورد بدون پیام قابل‌مشاهده
+    bale_send_text(
+        chat_id,
+        "\u200b",  # Zero‑Width Space (نامرئی)
+        reply_markup=BALE_KEYBOARD
+    )
     
     # -----------------------------------------------
     # /start = ایجاد یا دریافت لینک
@@ -862,7 +862,7 @@ def handle_bale_update(upd):
             token = create_link_for_bale(chat_id)
 
         tg_link = f"https://t.me/{TELEGRAM_BOT_USERNAME}?start={token}"
-        bale_send_text(chat_id, f"برای اتصال به تلگرام روی لینک زیر بزن:\n{tg_link}", reply_markup=BALE_KEYBOARD)
+        bale_send_text(chat_id, f"برای اتصال به تلگرام روی لینک زیر بزن:\n{tg_link}")
         return
 
     # -----------------------------------------------
