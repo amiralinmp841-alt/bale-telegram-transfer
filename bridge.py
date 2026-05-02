@@ -4,22 +4,18 @@ import requests
 import time
 import threading
 import json
+from vip import start_telethon
 
 
 from db_manager import (
     create_link_for_bale, get_link_by_bale, activate_link,
     get_link_by_telegram, get_pair, deactivate,
-    get_auto_delete, toggle_auto_delete   # ✔ اضافه شد
+    get_auto_delete, toggle_auto_delete, join_key,
+    user_has_valid_key, add_user_volume, get_user_key,
+    get_key_used_volume, get_time_info, leave_key,
+    make_backup, restore_backup, cleanup_old_backups
 )
 from panel import handle_admin_message, is_admin
-from db_manager import join_key
-from db_manager import user_has_valid_key
-from db_manager import add_user_volume
-from db_manager import get_user_key, get_key_used_volume, get_time_info
-from db_manager import leave_key
-from db_manager import make_backup
-from db_manager import restore_backup
-from db_manager import cleanup_old_backups
 
 from youtube import (
     is_youtube_url,
@@ -36,6 +32,14 @@ from youtube import (
     user_video_cache
 )
 
+from vip import (
+    vip_search,
+    vip_next_page,
+    vip_get_video,
+    vip_search_cache,
+    vip_video_cache
+)
+
 
 # =============================
 # ENV VARIABLES
@@ -44,6 +48,13 @@ TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN")
 BALE_TOKEN = os.environ.get("BALE_TOKEN")
 TELEGRAM_BOT_USERNAME = os.environ.get("TELEGRAM_BOT_USERNAME")  # بدون @
 ADMIN_BALE_ID = int(os.environ.get("ADMIN_BALE_ID"))
+
+# این متغیرها را اینجا مقداردهی کن (یا بهتر است از os.environ استفاده کنی)
+API_ID = int(os.environ.get("API_ID", 12345))  # به جای 12345 آیدی خودت را بگذار
+API_HASH = os.environ.get("API_HASH", "your_hash_here")
+USER_SESSION = os.environ.get("USER_SESSION", "user_session")
+MEGASAVER_BOT = os.environ.get("MEGASAVER_BOT", "MegaSaverBot")
+
 
 
 if not TELEGRAM_TOKEN or not BALE_TOKEN or not TELEGRAM_BOT_USERNAME:
@@ -69,8 +80,9 @@ BALE_KEYBOARD = {
         [{"text": "دریافت لینک"}],
         [{"text": "تغییر لینک و قطع اتصال"}],
         [{"text": "🔎 جست و جوی یوتیوب"}],
+        [{"text": "🔎 سرچ VIP یوتیوب"}],            # ← جدید
         [{"text": "اشتراک من"}],
-        [{"text": "حذف اتومات"}],   # ✔ جدید
+        [{"text": "حذف اتومات"}],
         [{"text": "🚪 خروج از اشتراک"}]
     ],
     "resize_keyboard": True
@@ -247,6 +259,8 @@ def process_get_formats(chat_id, url):
 # =============================
 # POLLING LOOPS
 # =============================
+
+start_telethon()
 
 def telegram_polling_loop():
     offset = None
@@ -717,6 +731,116 @@ def handle_bale_update(upd):
             )
             return
 
+        # ✅ ویدیوهای بیشتر VIP
+        if data == "vip_more":
+        
+            videos = vip_next_page(chat_id)
+        
+            if not videos:
+                bale_send_text(chat_id, "❌ ویدیوی بیشتری یافت نشد.")
+                return
+        
+            for i, v in enumerate(videos):
+        
+                inline_keyboard = [[
+                    {
+                        "text": "👁 نمایش جزییات",
+                        "callback_data": f"vip_details|{i}"
+                    }
+                ]]
+        
+                if i == len(videos) - 1:
+                    inline_keyboard[0].append({
+                        "text": "▶️ ویدیوهای بیشتر",
+                        "callback_data": "vip_more"
+                    })
+        
+                requests.post(
+                    BALE_API + "sendPhoto",
+                    files={
+                        "photo": (
+                            "photo.jpg",
+                            requests.get(v["thumbnail"], timeout=10).content
+                        )
+                    },
+                    data={
+                        "chat_id": chat_id,
+                        "caption": v["title"],
+                        "reply_markup": json.dumps({
+                            "inline_keyboard": inline_keyboard
+                        })
+                    }
+                )
+        
+            return
+        
+        # ✅ نمایش جزییات VIP
+        if data.startswith("vip_details|"):
+        
+            try:
+                idx = int(data.split("|")[1])
+            except:
+                bale_send_text(chat_id, "❌ خطا.")
+                return
+        
+            video = vip_get_video(chat_id, idx)
+        
+            if not video:
+                bale_send_text(chat_id, "❌ ویدیو پیدا نشد.")
+                return
+        
+            url = video["url"]
+        
+            bale_send_text(chat_id, "⏳ در حال دریافت اطلاعات از دانلودر...")
+        
+            # این تابع در مرحله بعد کامل میشه
+            from vip import send_to_downloader
+        
+            threading.Thread(
+                target=send_to_downloader,
+                args=(chat_id, url),
+                daemon=True
+            ).start()
+        
+            return
+        
+        # ================================
+        # VIP TELEGRAM BUTTONS
+        # ================================
+        if data.startswith("vip_tg|"):
+            payload = data.split("|",1)[1]
+        
+            # اگر لینک مستقیم بود
+            if payload.startswith("http"):
+                from vip import download_and_send_parts
+                threading.Thread(
+                    target=download_and_send_parts,
+                    args=(chat_id, payload),
+                    daemon=True
+                ).start()
+                return
+        
+            # اگر دکمه عادی بود
+            from vip import send_button_click
+            threading.Thread(
+                target=send_button_click,
+                args=(chat_id, payload),
+                daemon=True
+            ).start()
+        
+            bale_send_text(chat_id,"⏳ در حال دریافت...")
+            return
+
+        if data == "vip_related":
+            from vip import send_button_click
+            threading.Thread(
+                target=send_button_click,
+                args=(chat_id, "related"),
+                daemon=True
+            ).start()
+            return
+        
+        
     msg = upd.get("message")
     if not msg:
         return
@@ -996,13 +1120,19 @@ def handle_bale_update(upd):
         )
     
         return
-    
+
     if user_state.get(chat_id) == "youtube_search":
-    
+
+        if text == "/cancel":
+            user_state.pop(chat_id, None)
+            user_search_cache.pop(chat_id, None)
+            user_download_cache.pop(chat_id, None)
+            bale_send_text(chat_id, "❌ عملیات لغو شد.", reply_markup=BALE_KEYBOARD)
+            return
+
         query = text
-    
         user_state.pop(chat_id)
-    
+
         # لینک مستقیم
         if is_youtube_url(query):
     
@@ -1095,13 +1225,76 @@ def handle_bale_update(upd):
         
         return
     
-    if text == "/cancel":
+    # ================================
+    # 🔎 سرچ VIP یوتیوب (جدید)
+    # ================================
+    if text == "🔎 سرچ VIP یوتیوب":
+        user_state[chat_id] = "youtube_vip"
+
+        bale_send_text(
+            chat_id,
+            "🔎 متن جستجوی یوتیوب یا لینک ویدیو را بفرست.\n\nبرای لغو /cancel رو بزن."
+        )
+        return
+
+    # ================================
+    # 🔎 پردازش سرچ VIP یوتیوب
+    # ================================
+    if user_state.get(chat_id) == "youtube_vip":
+    
+        if text == "/cancel":
+            user_state.pop(chat_id, None)
+            user_search_cache.pop(chat_id, None)
+            user_download_cache.pop(chat_id, None)
+            bale_send_text(chat_id, "❌ عملیات لغو شد.", reply_markup=BALE_KEYBOARD)
+            return
+    
+        query = text
         user_state.pop(chat_id, None)
-        user_search_cache.pop(chat_id, None)
-        user_download_cache.pop(chat_id, None)
-        bale_send_text(chat_id, "❌ عملیات لغو شد.", reply_markup=BALE_KEYBOARD)
+    
+        videos = vip_search(chat_id, query)
+    
+        if not videos:
+            bale_send_text(chat_id, "❌ نتیجه‌ای یافت نشد.")
+            return
+    
+        user_video_cache[chat_id] = videos
+    
+        for i, v in enumerate(videos):
+    
+            inline_keyboard = [[
+                {
+                    "text": "👁 نمایش جزییات",
+                    "callback_data": f"vip_details|{i}"
+                }
+            ]]
+    
+            if i == len(videos) - 1:
+                inline_keyboard[0].append({
+                    "text": "▶️ ویدیوهای بیشتر",
+                    "callback_data": "vip_more"
+                })
+    
+            requests.post(
+                BALE_API + "sendPhoto",
+                files={
+                    "photo":(
+                        "photo.jpg",
+                        requests.get(v["thumbnail"], timeout=10).content
+                    )
+                },
+                data={
+                    "chat_id": chat_id,
+                    "caption": v["title"],
+                    "reply_markup": json.dumps({
+                        "inline_keyboard": inline_keyboard
+                    })
+                }
+            )
+    
         return
     
+
     
     # -----------------------------------------------
     # ارسال پیام/فایل به تلگرام
