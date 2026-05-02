@@ -13,6 +13,8 @@ loop = asyncio.new_event_loop()
 asyncio.set_event_loop(loop)
 last_bot_message = {}
 pending_requests = {}   # msg_id -> bale_chat_id
+vip_search_cache = {}
+vip_video_cache = {}
 
 
 API_ID = int(os.environ.get("API_ID"))
