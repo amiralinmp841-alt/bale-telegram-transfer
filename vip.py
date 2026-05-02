@@ -5,6 +5,10 @@ import requests
 from telethon import TelegramClient, events
 from youtube import youtube_search
 import tempfile
+import asyncio
+
+loop = asyncio.new_event_loop()
+asyncio.set_event_loop(loop)
 
 API_ID = int(os.environ.get("API_ID"))
 API_HASH = os.environ.get("API_HASH")
@@ -28,17 +32,13 @@ pending_requests = {}   # msg_id -> bale_chat_id
 # =============================
 
 def start_telethon():
+    async def main():
+        await client.start()
+        print("✅ Telethon Started")
 
-    loop = asyncio.new_event_loop()
+    loop.create_task(main())
+    threading.Thread(target=loop.run_forever, daemon=True).start()
 
-    def run():
-        asyncio.set_event_loop(loop)
-        loop.run_until_complete(client.start())
-        client.add_event_handler(handle_bot_message, events.NewMessage(from_users=BOT_USERNAME))
-        client.run_until_disconnected()
-
-    import threading
-    threading.Thread(target=run, daemon=True).start()
 
 
 # =============================
@@ -91,12 +91,11 @@ def vip_get_video(chat_id, index):
 def send_to_downloader(bale_chat_id, url):
 
     async def task():
-
         msg = await client.send_message(BOT_USERNAME, url)
-
         pending_requests[msg.id] = bale_chat_id
 
-    asyncio.run_coroutine_threadsafe(task(), client.loop)
+    asyncio.run_coroutine_threadsafe(task(), loop)
+
 
 
 # =============================
