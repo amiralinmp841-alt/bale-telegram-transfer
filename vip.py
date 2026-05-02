@@ -85,6 +85,33 @@ def vip_get_video(chat_id, index):
 
     return videos[index]
 
+from youtube import youtube_related  # باید در youtube.py اضافه شود؛ توضیح پایین را ببین.
+
+def vip_related(chat_id, video_id, page=0):
+    """
+    دریافت ۵ ویدیو مرتبط با یک ویدیو واقعی YouTube (video_id).
+    از همان منطق vip_search استفاده می‌کند ولی query ندارد.
+    """
+    videos = youtube_related(video_id, limit=5, page=page)
+    if not videos:
+        return []
+
+    vip_search_cache[chat_id] = {
+        "query": f"related:{video_id}",
+        "page": page,
+        "video_id": video_id
+    }
+    vip_video_cache[chat_id] = videos
+    return videos
+
+
+def vip_related_next_page(chat_id):
+    cache = vip_search_cache.get(chat_id)
+    if not cache or not cache.get("video_id"):
+        return []
+    video_id = cache["video_id"]
+    page = cache["page"] + 1
+    return vip_related(chat_id, video_id, page)
 
 # =============================
 # SEND LINK TO DOWNLOADER
@@ -151,8 +178,8 @@ async def handle_bot_message(event):
 
     inline.append([
         {
-            "text": "🎯 ویدیوهای مرتبط",
-            "callback_data": "vip_related"
+          "text": "🎯 ویدیوهای مرتبط",
+          "callback_data": f"vip_related_{index}"
         }
     ])
 
@@ -247,8 +274,8 @@ async def handle_bot_message_edited(event):
 
     inline.append([
         {
-            "text": "🎯 ویدیوهای مرتبط",
-            "callback_data": "vip_related"
+          "text": "🎯 ویدیوهای مرتبط",
+          "callback_data": f"vip_related_{index}"
         }
     ])
 
@@ -436,3 +463,61 @@ def find_bale_chat_id(msg):
         return list(pending_requests.values())[-1]
 
     return None
+
+def handle_callback(bale_chat_id, data):
+    """
+    هندل همه callback های VIP از بله (search, more, related, ...)
+    """
+    from bridge import bale_send_text
+    if data == "vip_related":
+        # پیدا کردن video_id از آخرین پیام ربات تلگرام
+        msg = last_bot_message.get(bale_chat_id)
+        if not msg or not msg.text:
+            bale_send_text(bale_chat_id, "❌ عنوانی یافت نشد.")
+            return
+
+        title = msg.text.replace("\n", " ").strip()
+
+        # سرچ مانند vip_search ولی بر اساس ID واقعی ویدیو نیست
+        videos = vip_search(bale_chat_id, title)
+        if not videos:
+            bale_send_text(bale_chat_id, "❌ ویدیوی مرتبطی یافت نشد.")
+            return
+
+        from bridge import send_vip_results
+        send_vip_results(bale_chat_id, videos)
+        return
+
+    # وقتی روی دکمه 🎯 خاص هر ویدیو (در جزئیات) کلیک شد
+    if data.startswith("vip_related_"):
+        index = int(data.split("_")[-1])
+        video = vip_get_video(bale_chat_id, index)
+        if not video:
+            bale_send_text(bale_chat_id, "❌ ویدیو پیدا نشد.")
+            return
+
+        v_id = video.get("video_id") or youtube_extract_id(video["url"])
+        bale_send_text(bale_chat_id, f"🎯 در حال یافتن ویدیوهای مرتبط با: {video['title']}")
+        videos = vip_related(bale_chat_id, v_id)
+        if not videos:
+            bale_send_text(bale_chat_id, "❌ ویدیوی مرتبطی یافت نشد.")
+            return
+
+        from bridge import send_vip_results
+        send_vip_results(bale_chat_id, videos)
+        return
+
+    if data == "vip_more":
+        cache = vip_search_cache.get(bale_chat_id)
+        if cache and "video_id" in cache:  # اگر در حالت related هستیم
+            videos = vip_related_next_page(bale_chat_id)
+        else:
+            videos = vip_next_page(bale_chat_id)
+
+        if not videos:
+            bale_send_text(bale_chat_id, "❌ ویدیوی بیشتری نیست.")
+            return
+
+        from bridge import send_vip_results
+        send_vip_results(bale_chat_id, videos)
+        return
