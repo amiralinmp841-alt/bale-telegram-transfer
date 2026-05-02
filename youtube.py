@@ -375,7 +375,63 @@ def youtube_search(query, limit=10, page=0):
         print("SEARCH ERROR:", e)
         return []
 
+def youtube_related(video_id, limit=5, page=None):
+    import requests
 
+    YOUTUBE_API_KEY = os.environ.get("YOUTUBE_API_KEY")
+    base = "https://www.googleapis.com/youtube/v3/search"
+    params = {
+        "part": "snippet",
+        "type": "video",
+        "maxResults": limit,
+        "relatedToVideoId": video_id,
+        "key": YOUTUBE_API_KEY
+    }
+    if page:
+        params["pageToken"] = page
+
+    r = requests.get(base, params=params)
+    data = r.json()
+
+    videos = []
+    for item in data.get("items", []):
+        v_id = item["id"]["videoId"]
+        snippet = item["snippet"]
+        videos.append({
+            "video_id": v_id,
+            "title": snippet["title"],
+            "url": f"https://www.youtube.com/watch?v={v_id}",
+            "thumbnail": snippet["thumbnails"]["high"]["url"]
+        })
+    return videos
+
+from youtube import youtube_related  # باید در youtube.py اضافه شود؛ توضیح پایین را ببین.
+
+def vip_related(chat_id, video_id, page=0):
+    """
+    دریافت ۵ ویدیو مرتبط با یک ویدیو واقعی YouTube (video_id).
+    از همان منطق vip_search استفاده می‌کند ولی query ندارد.
+    """
+    videos = youtube_related(video_id, limit=5, page=page)
+    if not videos:
+        return []
+
+    vip_search_cache[chat_id] = {
+        "query": f"related:{video_id}",
+        "page": page,
+        "video_id": video_id
+    }
+    vip_video_cache[chat_id] = videos
+    return videos
+
+
+def vip_related_next_page(chat_id):
+    cache = vip_search_cache.get(chat_id)
+    if not cache or not cache.get("video_id"):
+        return []
+    video_id = cache["video_id"]
+    page = cache["page"] + 1
+    return vip_related(chat_id, video_id, page)
 
 # ============================================================
 # اطلاعات ویدیو
