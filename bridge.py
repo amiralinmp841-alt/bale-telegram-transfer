@@ -634,9 +634,7 @@ def handle_bale_update(upd):
                 args=(chat_id, url),
                 daemon=True
             ).start()
-            
-            return
-            
+                        
     
             buttons = []
             for f in formats[:8]:  # حداکثر ۸ کیفیت
