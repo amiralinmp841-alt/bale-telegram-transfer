@@ -23,6 +23,10 @@ from telethon.sessions import StringSession
 # "SESSION" همان رشته بلند شماست
 client = TelegramClient(StringSession(SESSION), API_ID, API_HASH)
 
+@client.on(events.NewMessage(from_users=BOT_USERNAME))
+async def bot_response_handler(event):
+    await handle_bot_message(event)
+    
 vip_search_cache = {}
 vip_video_cache = {}
 
