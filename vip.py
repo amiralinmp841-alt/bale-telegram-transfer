@@ -178,8 +178,8 @@ async def handle_bot_message(event):
 
     inline.append([
         {
-          "text": "🎯 ویدیوهای مرتبط",
-          "callback_data": f"vip_related_{index}"
+            "text": "🎯 ویدیوهای مرتبط",
+            "callback_data": "vip_related"
         }
     ])
 
@@ -274,8 +274,8 @@ async def handle_bot_message_edited(event):
 
     inline.append([
         {
-          "text": "🎯 ویدیوهای مرتبط",
-          "callback_data": f"vip_related_{index}"
+            "text": "🎯 ویدیوهای مرتبط",
+            "callback_data": "vip_related"
         }
     ])
 
