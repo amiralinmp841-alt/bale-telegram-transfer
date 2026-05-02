@@ -23,9 +23,43 @@ from telethon.sessions import StringSession
 # "SESSION" همان رشته بلند شماست
 client = TelegramClient(StringSession(SESSION), API_ID, API_HASH)
 
+# در vip.py
 @client.on(events.NewMessage(from_users=BOT_USERNAME))
-async def bot_response_handler(event):
-    await handle_bot_message(event)
+async def handle_bot_message(event):
+    msg = event.message
+    # 1. پیدا کردن bale_chat_id (از طریق pending_requests یا fallback)
+    bale_chat_id = find_bale_chat_id(msg) # این همان منطق fallback شماست
+    
+    if not bale_chat_id:
+        return
+
+    # ذخیره پیام برای کلیک‌های بعدی
+    last_bot_message[bale_chat_id] = msg
+
+    # 2. استخراج متن و دکمه‌ها
+    text = msg.raw_text or "📥 فایل دریافت شد:"
+    
+    # اینجا دکمه‌ها را به فرمت بله تبدیل می‌کنیم
+    bale_buttons = []
+    if msg.buttons:
+        for row in msg.buttons:
+            bale_row = []
+            for btn in row:
+                # تبدیل دکمه‌های تلگرام به دکمه‌های بله
+                bale_row.append({
+                    "text": btn.text,
+                    "callback_data": f"vip_tg|{btn.data.decode()}" # این همان دیتایی است که bridge می‌فهمد
+                })
+            bale_buttons.append(bale_row)
+    
+    # 3. ارسال به بله
+    from bridge import bale_send_text
+    bale_send_text(
+        bale_chat_id, 
+        text, 
+        reply_markup={"inline_keyboard": bale_buttons} if bale_buttons else None
+    )
+
     
 vip_search_cache = {}
 vip_video_cache = {}
@@ -44,6 +78,7 @@ def start_telethon():
 
     loop.create_task(main())
     threading.Thread(target=loop.run_forever, daemon=True).start()
+    print("✅ Telethon loop started and handlers active!", flush=True)
 
 
 
@@ -112,14 +147,20 @@ async def handle_bot_message(event):
 
     msg = event.message
 
+    # پیدا کردن bale_chat_id با fallback
     bale_chat_id = None
-
     if msg.reply_to_msg_id:
         bale_chat_id = pending_requests.get(msg.reply_to_msg_id)
-
-
-    if not bale_chat_id:
+    
+    if bale_chat_id is None and pending_requests:
+        # fallback به آخرین متقاضی فعال
+        last_msg_id = list(pending_requests.keys())[-1]
+        bale_chat_id = pending_requests[last_msg_id]
+    
+    if bale_chat_id is None:
+        print("❌ No bale_chat_id found — message skipped.")
         return
+    
 
     caption = msg.text or ""
 
