@@ -6,6 +6,8 @@ from telethon import TelegramClient, events
 from youtube import youtube_search
 import tempfile
 import asyncio
+import threading
+
 
 loop = asyncio.new_event_loop()
 asyncio.set_event_loop(loop)
@@ -208,7 +210,8 @@ def send_button_click(bale_chat_id, payload):
             payload
         )
 
-    asyncio.run_coroutine_threadsafe(task(), client.loop)
+    asyncio.run_coroutine_threadsafe(task(), loop)
+
 
 
 def download_and_send_parts(bale_chat_id, file_url, file_name=None, caption=None):
