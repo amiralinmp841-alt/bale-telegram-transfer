@@ -746,7 +746,14 @@ def handle_bale_update(upd):
                         "callback_data": f"vip_details|{i}"
                     }
                 ]]
-        
+
+                inline_keyboard.append([
+                    {
+                        "text": "🎯 ویدیوهای مرتبط",
+                        "callback_data": f"vip_related_{i}"
+                    }
+                ])
+
                 if i == len(videos) - 1:
                     inline_keyboard[0].append({
                         "text": "▶️ ویدیوهای بیشتر",
@@ -1269,6 +1276,13 @@ def handle_bale_update(upd):
                 }
             ]]
     
+            inline_keyboard.append([
+                {
+                    "text": "🎯 ویدیوهای مرتبط",
+                    "callback_data": f"vip_related_{i}"
+                }
+            ])
+
             if i == len(videos) - 1:
                 inline_keyboard[0].append({
                     "text": "▶️ ویدیوهای بیشتر",
