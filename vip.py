@@ -7,6 +7,8 @@ from youtube import youtube_search
 import tempfile
 import asyncio
 import threading
+from bridge import bale_send_video, bale_send_audio, bale_send_text
+
 
 
 loop = asyncio.new_event_loop()
@@ -195,6 +197,8 @@ async def handle_bot_message(event):
             file_bytes = await msg.download_media(bytes)
     
             file_name = "file.mp4"
+            mime_type = msg.media.document.mime_type
+    
             for attr in msg.media.document.attributes:
                 if hasattr(attr, "file_name"):
                     file_name = attr.file_name
@@ -203,9 +207,10 @@ async def handle_bot_message(event):
             bale_send_text(bale_chat_id, "⏳ در حال آماده سازی فایل...")
     
             from vip import process_local_file
-            process_local_file(bale_chat_id, file_bytes, file_name)
+            process_local_file(bale_chat_id, file_bytes, file_name, mime_type)
     
             return
+    
     
     
 
@@ -237,11 +242,20 @@ def download_and_send_parts(bale_chat_id, file_url, file_name=None, caption=None
         file_size = os.path.getsize(local_path)
         MAX_PART_SIZE = 20*1024*1024  # 20MB
 
+        # اطمینان از پسوند .mp4
+        base_name = file_name or "video.mp4"
+        if not base_name.lower().endswith(".mp4"):
+            base_name += ".mp4"
+
         if file_size <= MAX_PART_SIZE:
-            # مستقیم ارسال کن
+            # مستقیم به عنوان ویدیو ارسال کن
             with open(local_path, "rb") as f:
-                from bridge import bale_send_document
-                bale_send_document(bale_chat_id, f.read(), file_name or "file.mp4", caption)
+                from bridge import bale_send_video
+                bale_send_video(
+                    bale_chat_id,
+                    f.read(),
+                    caption or ""
+                )
         else:
             # تقسیم کن با ffmpeg
             from youtube import split_video_ffmpeg, clean_temp_files
@@ -252,16 +266,17 @@ def download_and_send_parts(bale_chat_id, file_url, file_name=None, caption=None
                 clean_temp_files(bale_chat_id)
                 return
 
+            from bridge import bale_send_video
             for i, part in enumerate(parts, 1):
                 with open(part, "rb") as f:
-                    from bridge import bale_send_document
-                    bale_send_document(
-                        bale_chat_id, f.read(),
-                        f"part{i}-{file_name or 'file.mp4'}",
-                        f"📦 پارت {i}"
+                    bale_send_video(
+                        bale_chat_id,
+                        f.read(),
+                        caption=f"📦 پارت {i}"
                     )
 
             clean_temp_files(bale_chat_id)
+
         os.unlink(local_path)
         from bridge import bale_send_text
         bale_send_text(bale_chat_id, "✅ ارسال فایل تکمیل شد.")
@@ -270,11 +285,17 @@ def download_and_send_parts(bale_chat_id, file_url, file_name=None, caption=None
         bale_send_text(bale_chat_id, f"❌ خطا در دانلود/ارسال: {e}")
 
 
-def process_local_file(bale_chat_id, file_bytes, file_name, caption=None):
+
+def process_local_file(bale_chat_id, file_bytes, file_name, mime_type=None, caption=None):
 
     import tempfile
-    from bridge import bale_send_document, bale_send_text
+    from bridge import bale_send_video, bale_send_audio, bale_send_text
     from youtube import split_video_ffmpeg, clean_temp_files
+
+    # اگر فایل صوتی بود
+    if mime_type in ["audio/mpeg", "audio/mp3"]:
+        bale_send_audio(bale_chat_id, file_bytes)
+        return
 
     temp = tempfile.NamedTemporaryFile(delete=False)
     temp.write(file_bytes)
@@ -284,8 +305,13 @@ def process_local_file(bale_chat_id, file_bytes, file_name, caption=None):
     file_size = os.path.getsize(local_path)
     MAX_PART_SIZE = 20*1024*1024
 
+    # اطمینان از mp4
+    base_name = file_name or "video.mp4"
+    if not base_name.lower().endswith(".mp4"):
+        base_name += ".mp4"
+
     if file_size <= MAX_PART_SIZE:
-        bale_send_document(bale_chat_id, file_bytes, file_name, caption)
+        bale_send_video(bale_chat_id, file_bytes, caption or "")
         os.unlink(local_path)
         return
 
@@ -300,17 +326,18 @@ def process_local_file(bale_chat_id, file_bytes, file_name, caption=None):
 
     for i, part in enumerate(parts, 1):
         with open(part, "rb") as f:
-            bale_send_document(
+            bale_send_video(
                 bale_chat_id,
                 f.read(),
-                f"part{i}-{file_name}",
-                f"📦 پارت {i}"
+                caption=f"📦 پارت {i}"
             )
 
     clean_temp_files(bale_chat_id)
     os.unlink(local_path)
 
     bale_send_text(bale_chat_id, "✅ ارسال کامل شد.")
+
+
 
 
 def find_bale_chat_id(msg):
