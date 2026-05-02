@@ -2,3 +2,4 @@ requests
 flask
 yt-dlp>=2025.3.31
 gunicorn
+telethon
