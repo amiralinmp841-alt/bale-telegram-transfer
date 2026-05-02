@@ -10,6 +10,7 @@ import random
 from urllib.parse import quote_plus
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
+
 # ============================================================
 # USER STATES & CACHE
 # ============================================================
@@ -308,6 +309,8 @@ def youtube_suggestions(query):
 # سرچ یوتیوب
 # ============================================================
 
+
+
 def youtube_search(query, limit=10, page=0):
 
     try:
@@ -326,28 +329,39 @@ def youtube_search(query, limit=10, page=0):
 
         html = r.text
 
-        # استخراج videoRenderer
-        matches = re.findall(
-            r'"videoId":"(.*?)".*?"title":\{"runs":\[\{"text":"(.*?)"\}\]',
-            html
-        )
+        # استخراج videoRenderer های کامل
+        renderers = re.findall(r'{"videoRenderer":(.*?)},"', html)
 
         results = []
         seen = set()
 
-        for vid, title in matches:
+        for block in renderers:
 
-            if vid in seen:
+            try:
+                data = json.loads("{" + block + "}")
+
+                vid = data.get("videoId")
+                title_runs = data.get("title", {}).get("runs", [])
+
+                if not vid or not title_runs:
+                    continue
+
+                title = title_runs[0].get("text", "")
+
+                if vid in seen:
+                    continue
+
+                seen.add(vid)
+
+                results.append({
+                    "id": vid,
+                    "title": title,
+                    "thumbnail": f"https://i.ytimg.com/vi/{vid}/hqdefault.jpg",
+                    "url": f"https://youtube.com/watch?v={vid}"
+                })
+
+            except:
                 continue
-
-            seen.add(vid)
-
-            results.append({
-                "id": vid,
-                "title": title,
-                "thumbnail": f"https://i.ytimg.com/vi/{vid}/hqdefault.jpg",
-                "url": f"https://youtube.com/watch?v={vid}"
-            })
 
         start = page * limit
         end = start + limit
@@ -357,6 +371,7 @@ def youtube_search(query, limit=10, page=0):
     except Exception as e:
         print("SEARCH ERROR:", e)
         return []
+
 
 
 
