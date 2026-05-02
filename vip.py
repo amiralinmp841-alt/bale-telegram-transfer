@@ -11,7 +11,11 @@ API_HASH = os.environ.get("API_HASH")
 SESSION = os.environ.get("USER_SESSION","user_session")
 BOT_USERNAME = os.environ.get("MEGASAVER_BOT","MegaSaverBot")
 
-client = TelegramClient(SESSION, API_ID, API_HASH)
+from telethon import TelegramClient
+from telethon.sessions import StringSession
+
+# "SESSION" همان رشته بلند شماست
+client = TelegramClient(StringSession(SESSION), API_ID, API_HASH)
 
 vip_search_cache = {}
 vip_video_cache = {}
