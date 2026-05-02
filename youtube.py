@@ -310,68 +310,70 @@ def youtube_suggestions(query):
 # ============================================================
 
 
+import re, json, requests
 
 def youtube_search(query, limit=10, page=0):
-
     try:
-
         url = "https://www.youtube.com/results"
-
-        params = {
-            "search_query": query
-        }
-
-        headers = {
-            "User-Agent": "Mozilla/5.0"
-        }
+        params = {"search_query": query}
+        headers = {"User-Agent": "Mozilla/5.0"}
 
         r = requests.get(url, params=params, headers=headers, timeout=10)
-
         html = r.text
 
-        # استخراج videoRenderer های کامل
-        renderers = re.findall(r'{"videoRenderer":(.*?)},"', html)
+        # پیدا کردن تگ ytInitialData (داده ساختاریافته جستجو)
+        data_match = re.search(r'var ytInitialData = ({.*?});', html)
+        if not data_match:
+            print("❌ ytInitialData not found in page")
+            return []
 
-        results = []
+        data = json.loads(data_match.group(1))
+        # حرکت در ساختار JSON تا رسیدن به videoRenderer‌ها
+        sections = (
+            data.get("contents", {})
+                .get("twoColumnSearchResultsRenderer", {})
+                .get("primaryContents", {})
+                .get("sectionListRenderer", {})
+                .get("contents", [])
+        )
+
+        videos = []
         seen = set()
 
-        for block in renderers:
-
-            try:
-                data = json.loads("{" + block + "}")
-
-                vid = data.get("videoId")
-                title_runs = data.get("title", {}).get("runs", [])
-
-                if not vid or not title_runs:
+        for section in sections:
+            items = (
+                section.get("itemSectionRenderer", {})
+                .get("contents", [])
+            )
+            for item in items:
+                v = item.get("videoRenderer")
+                if not v:
                     continue
 
-                title = title_runs[0].get("text", "")
+                vid = v.get("videoId")
+                title_runs = v.get("title", {}).get("runs", [])
+                title = title_runs[0].get("text", "") if title_runs else ""
 
-                if vid in seen:
+                if not vid or vid in seen:
                     continue
 
                 seen.add(vid)
 
-                results.append({
+                videos.append({
                     "id": vid,
                     "title": title,
                     "thumbnail": f"https://i.ytimg.com/vi/{vid}/hqdefault.jpg",
-                    "url": f"https://youtube.com/watch?v={vid}"
+                    "url": f"https://www.youtube.com/watch?v={vid}"
                 })
-
-            except:
-                continue
 
         start = page * limit
         end = start + limit
 
-        return results[start:end]
+        return videos[start:end]
 
     except Exception as e:
         print("SEARCH ERROR:", e)
         return []
-
 
 
 
