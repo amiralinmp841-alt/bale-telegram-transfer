@@ -531,7 +531,10 @@ def download_video(url, fmt_id, chat_id):
 def split_video_ffmpeg(path, chat_id):
 
     parts = []
-    output_pattern = f"/tmp/part_{chat_id}_%03d.mp4"
+    work_dir = f"/tmp/vip_{chat_id}"
+    os.makedirs(work_dir, exist_ok=True)
+
+    output_pattern = f"{work_dir}/part_%03d.mp4"
 
     file_size = os.path.getsize(path)
     file_size_mb = file_size / (1024 * 1024)
@@ -554,7 +557,6 @@ def split_video_ffmpeg(path, chat_id):
     try:
         duration = float(proc.stdout.strip())
     except:
-        print("ffprobe error:", proc.stderr)
         return []
 
     target_mb = 18
@@ -571,19 +573,18 @@ def split_video_ffmpeg(path, chat_id):
             "-segment_time", str(segment_time),
             "-reset_timestamps", "1",
             output_pattern
-        ],
-        capture_output=True
+        ]
     )
 
     if proc.returncode != 0:
-        print("FFMPEG ERROR:", proc.stderr)
         return []
 
-    for f in sorted(os.listdir("/tmp")):
-        if f.startswith(f"part_{chat_id}_") and f.endswith(".mp4"):
-            parts.append("/tmp/" + f)
+    for f in sorted(os.listdir(work_dir)):
+        if f.startswith("part_") and f.endswith(".mp4"):
+            parts.append(os.path.join(work_dir, f))
 
     return parts
+
 
 # ============================================================
 # پاکسازی فایل‌ها
