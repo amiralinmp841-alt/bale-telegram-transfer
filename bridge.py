@@ -829,15 +829,17 @@ def handle_bale_update(upd):
             bale_send_text(chat_id,"⏳ در حال دریافت...")
             return
 
-        if data == "vip_related":
-            from vip import send_button_click
+        # ✅ ویدیوهای مرتبط VIP
+        if data.startswith("vip_related"):
+            # این تابع تمام منطق "ویدیوهای مرتبط" و صفحه‌بندی را هندل می‌کند
+            from vip import handle_callback
             threading.Thread(
-                target=send_button_click,
-                args=(chat_id, "related"),
+                target=handle_callback,
+                args=(chat_id, data),
                 daemon=True
             ).start()
             return
-        
+
         
     msg = upd.get("message")
     if not msg:
