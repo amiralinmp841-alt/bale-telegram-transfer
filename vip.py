@@ -191,7 +191,7 @@ async def handle_bot_message(event):
     # هندل دکمه کیفیت VIP
     if msg.media and hasattr(msg.media, 'document'):
         mime_type = getattr(msg.media.document, 'mime_type', "")
-        if mime_type in ["video/mp4", "audio/mpeg", "audio/mp3"]:
+        if mime_type.startswith("video/") or mime_type.startswith("audio/"):
             file_bytes = await msg.download_media(bytes)
 
             file_name = "file.mp4"
@@ -207,7 +207,79 @@ async def handle_bot_message(event):
 
             return
 
-    
+@client.on(events.MessageEdited(from_users=BOT_USERNAME))
+async def handle_bot_message_edited(event):
+
+    msg = event.message
+
+    print("✏️ BOT MESSAGE EDITED:", msg.text)
+
+    # همان منطق پیدا کردن کاربر بله
+    bale_chat_id = None
+
+    if msg.reply_to_msg_id:
+        bale_chat_id = pending_requests.get(msg.reply_to_msg_id)
+
+    if bale_chat_id is None and pending_requests:
+        last_msg_id = list(pending_requests.keys())[-1]
+        bale_chat_id = pending_requests[last_msg_id]
+
+    if bale_chat_id is None:
+        print("❌ No bale_chat_id found — edited message skipped.")
+        return
+
+    last_bot_message[bale_chat_id] = msg
+
+    caption = msg.text or ""
+
+    inline = []
+
+    if msg.buttons:
+        for row in msg.buttons:
+            line = []
+            for btn in row:
+                data = btn.data.decode() if btn.data else "none"
+                line.append({
+                    "text": btn.text,
+                    "callback_data": f"vip_tg|{data}"
+                })
+            inline.append(line)
+
+    inline.append([
+        {
+            "text": "🎯 ویدیوهای مرتبط",
+            "callback_data": "vip_related"
+        }
+    ])
+
+    photo_bytes = None
+    if msg.photo:
+        photo_bytes = await msg.download_media(bytes)
+
+    from bridge import bale_send_photo, bale_send_text, BALE_API
+    import json
+
+    if photo_bytes:
+        requests.post(
+            BALE_API + "sendPhoto",
+            files={"photo":("photo.jpg",photo_bytes)},
+            data={
+                "chat_id":bale_chat_id,
+                "caption":caption,
+                "reply_markup":json.dumps({
+                    "inline_keyboard":inline
+                })
+            }
+        )
+    else:
+        bale_send_text(
+            bale_chat_id,
+            caption,
+            reply_markup={
+                "inline_keyboard": inline
+            }
+        )
+
     
 
 def send_button_click(bale_chat_id, callback_data):
@@ -304,9 +376,10 @@ def process_local_file(bale_chat_id, file_bytes, file_name, mime_type=None, capt
     from youtube import split_video_ffmpeg, clean_temp_files
 
     # اگر فایل صوتی بود
-    if mime_type in ["audio/mpeg", "audio/mp3"]:
+    if mime_type and mime_type.startswith("audio/"):
         bale_send_audio(bale_chat_id, file_bytes)
         return
+    
 
     temp = tempfile.NamedTemporaryFile(delete=False)
     temp.write(file_bytes)
