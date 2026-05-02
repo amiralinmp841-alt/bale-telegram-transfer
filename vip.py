@@ -11,6 +11,9 @@ import threading
 
 loop = asyncio.new_event_loop()
 asyncio.set_event_loop(loop)
+last_bot_message = {}
+pending_requests = {}   # msg_id -> bale_chat_id
+
 
 API_ID = int(os.environ.get("API_ID"))
 API_HASH = os.environ.get("API_HASH")
@@ -22,50 +25,6 @@ from telethon.sessions import StringSession
 
 # "SESSION" همان رشته بلند شماست
 client = TelegramClient(StringSession(SESSION), API_ID, API_HASH)
-
-# در vip.py
-@client.on(events.NewMessage(from_users=BOT_USERNAME))
-async def handle_bot_message(event):
-    msg = event.message
-    # 1. پیدا کردن bale_chat_id (از طریق pending_requests یا fallback)
-    bale_chat_id = find_bale_chat_id(msg) # این همان منطق fallback شماست
-    
-    if not bale_chat_id:
-        return
-
-    # ذخیره پیام برای کلیک‌های بعدی
-    last_bot_message[bale_chat_id] = msg
-
-    # 2. استخراج متن و دکمه‌ها
-    text = msg.raw_text or "📥 فایل دریافت شد:"
-    
-    # اینجا دکمه‌ها را به فرمت بله تبدیل می‌کنیم
-    bale_buttons = []
-    if msg.buttons:
-        for row in msg.buttons:
-            bale_row = []
-            for btn in row:
-                # تبدیل دکمه‌های تلگرام به دکمه‌های بله
-                bale_row.append({
-                    "text": btn.text,
-                    "callback_data": f"vip_tg|{btn.data.decode()}" # این همان دیتایی است که bridge می‌فهمد
-                })
-            bale_buttons.append(bale_row)
-    
-    # 3. ارسال به بله
-    from bridge import bale_send_text
-    bale_send_text(
-        bale_chat_id, 
-        text, 
-        reply_markup={"inline_keyboard": bale_buttons} if bale_buttons else None
-    )
-
-    
-vip_search_cache = {}
-vip_video_cache = {}
-
-pending_requests = {}   # msg_id -> bale_chat_id
-
 
 # =============================
 # TELETHON START
@@ -143,6 +102,7 @@ def send_to_downloader(bale_chat_id, url):
 # HANDLE BOT RESPONSE
 # =============================
 
+@client.on(events.NewMessage(from_users=BOT_USERNAME))
 async def handle_bot_message(event):
 
     msg = event.message
@@ -160,6 +120,7 @@ async def handle_bot_message(event):
     if bale_chat_id is None:
         print("❌ No bale_chat_id found — message skipped.")
         return
+    last_bot_message[bale_chat_id] = msg
     
 
     caption = msg.text or ""
@@ -246,16 +207,18 @@ async def handle_bot_message(event):
     
     
 
-def send_button_click(bale_chat_id, payload):
-
+def send_button_click(bale_chat_id, callback_data):
     async def task():
-
-        await client.send_message(
-            BOT_USERNAME,
-            payload
-        )
+        msg = last_bot_message.get(bale_chat_id)
+        if msg:
+            # کلیک واقعی روی دکمه در تلگرام
+            # callback_data که از بله آمده مثلا "quality_1080"
+            await msg.click(data=callback_data.encode()) 
+        else:
+            print(f"❌ No last_bot_message for {bale_chat_id}")
 
     asyncio.run_coroutine_threadsafe(task(), loop)
+
 
 
 
@@ -348,3 +311,15 @@ def process_local_file(bale_chat_id, file_bytes, file_name, caption=None):
     bale_send_text(bale_chat_id, "✅ ارسال کامل شد.")
 
 
+def find_bale_chat_id(msg):
+
+    # اگر پاسخ به پیام ما باشد
+    if msg.reply_to_msg_id:
+        if msg.reply_to_msg_id in pending_requests:
+            return pending_requests[msg.reply_to_msg_id]
+
+    # fallback → آخرین درخواست
+    if pending_requests:
+        return list(pending_requests.values())[-1]
+
+    return None
