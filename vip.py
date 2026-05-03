@@ -7,15 +7,12 @@ from youtube import youtube_search
 import tempfile
 import threading
 import re
-import secrets
-import time
 
 
 loop = asyncio.new_event_loop()
 asyncio.set_event_loop(loop)
-last_bot_message = {}   # token -> msg
-pending_requests = {}   # token -> request data
-token_chat_map = {}   # token -> bale_chat_id
+last_bot_message = {}
+pending_requests = {}   # msg_id -> bale_chat_id
 vip_search_cache = {}
 vip_video_cache = {}
 
@@ -120,31 +117,14 @@ def vip_related_next_page(chat_id):
 # SEND LINK TO DOWNLOADER
 # =============================
 
-def send_to_downloader(bale_chat_id, url, video_title=None):
-    """
-    ارسال به ربات دانلودر با اضافه کردن توکن یکتا برای تشخیص تضمینی پاسخ.
-    """
+def send_to_downloader(bale_chat_id, url):
+
     async def task():
-        # ایجاد یک توکن تصادفی 8 کاراکتری
-        token = secrets.token_hex(4)
-
-        # اضافه‌کردن توکن به انتهای URL تا ربات دانلودر در caption نمایش دهد
-        tagged_url = f"{url} #ID{token}"
-
-        # ارسال به دانلودر
-        msg = await client.send_message(BOT_USERNAME, tagged_url)
-
-        # ذخیرهٔ مشخصات درخواست
-        pending_requests[token] = {
-            "chat_id": bale_chat_id,
-            "url": url,
-            "title": video_title,
-            "timestamp": time.time()
-        }
-
-        print(f"🔖 Sent to downloader with token={token}")
+        msg = await client.send_message(BOT_USERNAME, url)
+        pending_requests[msg.id] = bale_chat_id
 
     asyncio.run_coroutine_threadsafe(task(), loop)
+
 
 
 # =============================
@@ -156,36 +136,20 @@ async def handle_bot_message(event):
 
     msg = event.message
 
-    caption = msg.text or ""
-
-    token = extract_token_from_text(caption)
+    # پیدا کردن bale_chat_id با fallback
+    bale_chat_id = None
+    if msg.reply_to_msg_id:
+        bale_chat_id = pending_requests.get(msg.reply_to_msg_id)
     
-    if not token:
-        print("❌ No token found in message")
-        return
-    
-    req = pending_requests.get(token)
-    
-    if not req:
-        print("❌ Unknown token")
-        return
-    
-    bale_chat_id = req["chat_id"]
-    
-    # بعد از match حذف کن
-    pending_requests.pop(token, None)
-    token_chat_map[token] = bale_chat_id
-    last_bot_message[token] = msg
-
-    
-    print(f"✅ Matched response to chat {bale_chat_id} with token={token}")
+    if bale_chat_id is None and pending_requests:
+        # fallback به آخرین متقاضی فعال
+        last_msg_id = list(pending_requests.keys())[-1]
+        bale_chat_id = pending_requests[last_msg_id]
     
     if bale_chat_id is None:
         print("❌ No bale_chat_id found — message skipped.")
         return
-    
-    # پیام را بر اساس توکن ذخیره کنیم (نه chat_id)
-    last_bot_message[token] = msg
+    last_bot_message[bale_chat_id] = msg
     
 
     caption = msg.text or ""
@@ -265,24 +229,29 @@ async def handle_bot_message(event):
 async def handle_bot_message_edited(event):
 
     msg = event.message
+
+    print("✏️ BOT MESSAGE EDITED:", msg.text)
+
+    # همان منطق پیدا کردن کاربر بله
+    bale_chat_id = None
+
+    if msg.reply_to_msg_id:
+        bale_chat_id = pending_requests.get(msg.reply_to_msg_id)
+
+    if bale_chat_id is None and pending_requests:
+        last_msg_id = list(pending_requests.keys())[-1]
+        bale_chat_id = pending_requests[last_msg_id]
+
+    if bale_chat_id is None:
+        print("❌ No bale_chat_id found — edited message skipped.")
+        return
+
+    last_bot_message[bale_chat_id] = msg
+
     caption = msg.text or ""
 
-    token = extract_token_from_text(caption)
-
-    if not token:
-        print("✏️ Edited but no token; skipped.")
-        return
-
-    bale_chat_id = token_chat_map.get(token)
-
-    if not bale_chat_id:
-        print("✏️ Edited token not mapped; skipped.")
-        return
-
-    # آخرین پیام مربوط به این توکن
-    last_bot_message[token] = msg
-
     inline = []
+
     if msg.buttons:
         for row in msg.buttons:
             line = []
@@ -300,17 +269,16 @@ async def handle_bot_message_edited(event):
 
     from bridge import bale_send_photo, bale_send_text, BALE_API
     import json
-    import requests
 
     if photo_bytes:
         requests.post(
             BALE_API + "sendPhoto",
-            files={"photo": ("photo.jpg", photo_bytes)},
+            files={"photo":("photo.jpg",photo_bytes)},
             data={
-                "chat_id": bale_chat_id,
-                "caption": caption,
-                "reply_markup": json.dumps({
-                    "inline_keyboard": inline
+                "chat_id":bale_chat_id,
+                "caption":caption,
+                "reply_markup":json.dumps({
+                    "inline_keyboard":inline
                 })
             }
         )
@@ -322,7 +290,6 @@ async def handle_bot_message_edited(event):
                 "inline_keyboard": inline
             }
         )
-
 
     
 
@@ -554,15 +521,5 @@ def extract_youtube_id(url):
         match = re.search(pattern, url)
         if match:
             return match.group(1)
-
-    return None
-
-def extract_token_from_text(text):
-    if not text:
-        return None
-
-    m = re.search(r"#ID([0-9a-fA-F]{8})", text)
-    if m:
-        return m.group(1)
 
     return None
