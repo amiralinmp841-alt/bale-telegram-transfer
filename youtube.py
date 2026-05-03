@@ -405,8 +405,6 @@ def youtube_related(video_id, limit=5, page=None):
         })
     return videos
 
-from youtube import youtube_related  # باید در youtube.py اضافه شود؛ توضیح پایین را ببین.
-
 def vip_related(chat_id, video_id, page=0):
     """
     دریافت ۵ ویدیو مرتبط با یک ویدیو واقعی YouTube (video_id).
