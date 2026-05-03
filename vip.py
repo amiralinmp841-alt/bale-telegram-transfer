@@ -125,7 +125,9 @@ def send_to_downloader(bale_chat_id, url):
 
     asyncio.run_coroutine_threadsafe(task(), loop)
 
-# =========ظ===================
+
+
+# =============================
 # HANDLE BOT RESPONSE
 # =============================
 
@@ -177,17 +179,7 @@ async def handle_bot_message(event):
     photo_bytes = None
 
     if msg.photo:
-        tmp = tempfile.NamedTemporaryFile(delete=False)
-        photo_path = tmp.name
-        tmp.close()
-        
-        await msg.download_media(file=photo_path)
-        
-        with open(photo_path,"rb") as f:
-            photo_bytes = f.read()
-        
-        os.unlink(photo_path)
-        
+        photo_bytes = await msg.download_media(bytes)
 
     # ارسال به بله
 
@@ -218,15 +210,10 @@ async def handle_bot_message(event):
     if msg.media and hasattr(msg.media, 'document'):
         mime_type = getattr(msg.media.document, 'mime_type', "")
         if mime_type.startswith("video/") or mime_type.startswith("audio/"):
-            tmp = tempfile.NamedTemporaryFile(delete=False)
-            path = tmp.name
-            tmp.close()
-            
-            await msg.download_media(file=path)
-            
+            file_bytes = await msg.download_media(bytes)
 
             file_name = "file.mp4"
-            for attr in getattr(msg.media.document, "attributes", []):
+            for attr in msg.media.document.attributes:
                 if hasattr(attr, "file_name"):
                     file_name = attr.file_name
 
@@ -234,7 +221,7 @@ async def handle_bot_message(event):
             bale_send_text(bale_chat_id, "⏳ در حال آماده سازی فایل...")
 
             # همین فایل فعلی است؛ نیازی به import دوباره نیست
-            process_downloaded_file(bale_chat_id, path, file_name, mime_type)
+            process_local_file(bale_chat_id, file_bytes, file_name, mime_type)
 
             return
 
@@ -278,17 +265,7 @@ async def handle_bot_message_edited(event):
 
     photo_bytes = None
     if msg.photo:
-        tmp = tempfile.NamedTemporaryFile(delete=False)
-        photo_path = tmp.name
-        tmp.close()
-        
-        await msg.download_media(file=photo_path)
-        
-        with open(photo_path,"rb") as f:
-            photo_bytes = f.read()
-        
-        os.unlink(photo_path)
-        
+        photo_bytes = await msg.download_media(bytes)
 
     from bridge import bale_send_photo, bale_send_text, BALE_API
     import json
@@ -455,36 +432,6 @@ def process_local_file(bale_chat_id, file_bytes, file_name, mime_type=None, capt
 
     bale_send_text(bale_chat_id, "✅ ارسال کامل شد.")
 
-def process_downloaded_file(bale_chat_id, path, file_name, mime_type):
-
-    from bridge import bale_send_video, bale_send_audio, bale_send_text
-    from youtube import split_video_ffmpeg, clean_temp_files
-
-    file_size = os.path.getsize(path)
-    MAX_PART_SIZE = 20 * 1024 * 1024
-
-    if mime_type and mime_type.startswith("audio/"):
-        with open(path,"rb") as f:
-            bale_send_audio(bale_chat_id,f.read())
-        os.unlink(path)
-        return
-
-    if file_size <= MAX_PART_SIZE:
-        with open(path,"rb") as f:
-            bale_send_video(bale_chat_id,f.read())
-        os.unlink(path)
-        return
-
-    bale_send_text(bale_chat_id,"✂️ فایل بزرگ است، در حال تقسیم...")
-
-    parts = split_video_ffmpeg(path,bale_chat_id)
-
-    for i,part in enumerate(parts,1):
-        with open(part,"rb") as f:
-            bale_send_video(bale_chat_id,f.read(),caption=f"📦 پارت {i}")
-
-    clean_temp_files(bale_chat_id)
-    os.unlink(path)
 
 
 
