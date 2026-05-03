@@ -179,7 +179,7 @@ async def handle_bot_message(event):
     photo_bytes = None
 
     if msg.photo:
-        photo_path = await msg.download_media(file="downloads/", part_size_kb=2048)
+        photo_path = await client.download_media(msg, file="downloads/")
         with open(photo_path, "rb") as f:
             photo_bytes = f.read()
 
@@ -212,7 +212,7 @@ async def handle_bot_message(event):
     if msg.media and hasattr(msg.media, 'document'):
         mime_type = getattr(msg.media.document, 'mime_type', "")
         if mime_type.startswith("video/") or mime_type.startswith("audio/"):
-            file_path = await msg.download_media(file="downloads/", part_size_kb=2048)
+            file_path = await client.download_media(msg, file="downloads/")
 
             with open(file_path, "rb") as f:
                 file_bytes = f.read()
@@ -271,7 +271,7 @@ async def handle_bot_message_edited(event):
 
     photo_bytes = None
     if msg.photo:
-        photo_path = await msg.download_media(file="downloads/", part_size_kb=2048)
+        photo_path = await client.download_media(msg, file="downloads/")
         with open(photo_path, "rb") as f:
             photo_bytes = f.read()
 
