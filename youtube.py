@@ -663,13 +663,16 @@ def split_video_ffmpeg(path, chat_id):
 # پاکسازی فایل‌ها
 # ============================================================
 
-def clean_temp_files(chat_id):
+import shutil
 
-    for f in os.listdir("/tmp"):
+def clean_temp_files(chat_id):
+    tmp_dir = "/tmp"
+    for f in os.listdir(tmp_dir):
         if str(chat_id) in f:
+            path = os.path.join(tmp_dir, f)
             try:
-                os.remove("/tmp/" + f)
+                if os.path.isdir(path):
+                    shutil.rmtree(path)   # ← ← ← مشکل همین بو                else:
+                    os.remove(path)
             except Exception as e:
                 print("cleanup error:", e)
-
-
