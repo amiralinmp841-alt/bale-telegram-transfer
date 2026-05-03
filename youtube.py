@@ -405,6 +405,8 @@ def youtube_related(video_id, limit=5, page=None):
         })
     return videos
 
+from youtube import youtube_related  # باید در youtube.py اضافه شود؛ توضیح پایین را ببین.
+
 def vip_related(chat_id, video_id, page=0):
     """
     دریافت ۵ ویدیو مرتبط با یک ویدیو واقعی YouTube (video_id).
@@ -461,52 +463,30 @@ def get_video_info(url):
     }
 
 # ============================================================
-
-# ============================================================
-
-def can_connect_direct_youtube(timeout=3):
-    """
-    چک می‌کند آیا سرور بدون پروکسی به یوتیوب وصل است یا نه
-    """
-    try:
-        r = requests.get(
-            "https://www.youtube.com/favicon.ico",
-            headers={"User-Agent": "Mozilla/5.0"},
-            timeout=timeout
-        )
-        return r.status_code == 200
-    except:
-        return False
-
-# ============================================================
 # گرفتن کیفیت‌ها
 # ============================================================
 
 def get_video_formats(url):
+    """
+    سعی می‌کند با پروکسی سالم yt-dlp را اجرا کند.
+    اگر پروکسی خراب بود → پروکسی بعدی را امتحان می‌کند.
+    """
 
-    # آیا اتصال مستقیم داریم؟
-    direct_ok = can_connect_direct_youtube()
-    if direct_ok:
-        print("[NET] Direct YouTube access OK → no proxy", flush=True)
-    else:
-        print("[NET] Direct blocked → proxy required", flush=True)
-
-    # تلاش‌ها
+    # 3 بار تلاش با 3 پروکسی مختلف
     for attempt in range(3):
 
-        proxy = None
-        if not direct_ok:
-            proxy = get_working_proxy()
-            if not proxy:
-                print("NO WORKING PROXY", flush=True)
-                return None
+        proxy = get_working_proxy()
 
-        if proxy:
-            print(f"[YT-DLP] Using proxy: {proxy}", flush=True)
-            cmd = YTDLP_CMD + ["--proxy", f"http://{proxy}", "-J", url]
-        else:
-            print("[YT-DLP] Using DIRECT connection", flush=True)
-            cmd = YTDLP_CMD + ["-J", url]
+        if proxy is None:
+            print("NO WORKING PROXY (PROXY None)", flush=True)
+            return None
+
+        print(f"[YT-DLP] Using proxy: {proxy}", flush=True)
+
+        cmd = YTDLP_CMD + [
+            "--proxy", f"http://{proxy}",
+            "-J", url
+        ]
 
         try:
             proc = subprocess.run(
@@ -516,47 +496,46 @@ def get_video_formats(url):
                 timeout=40
             )
 
+            print("YT-DLP RETURN CODE:", proc.returncode, flush=True)
+            print("YT-DLP STDERR:", proc.stderr[:200], flush=True)
+
             if proc.returncode == 0:
-                data = json.loads(proc.stdout)
-                fmt_list = []
+                # موفق
+                try:
+                    data = json.loads(proc.stdout)
+                    fmt_list = []
+                    for f in data.get("formats", []):
+                        if f.get("vcodec") == "none":
+                            continue
+                        h = f.get("height")
+                        if not h:
+                            continue
+                        size = f.get("filesize") or f.get("filesize_approx") or 0
+                        fmt_list.append({
+                            "id": f["format_id"],
+                            "quality": f"{h}p",
+                            "size": round(size/(1024*1024), 2)
+                        })
+                    fmt_list = sorted(fmt_list, key=lambda x: int(x["quality"].replace("p","")))
+                    return fmt_list[:6]
+                except:
+                    return None
 
-                for f in data.get("formats", []):
-                    if f.get("vcodec") == "none":
-                        continue
-                    h = f.get("height")
-                    if not h:
-                        continue
-
-                    size = f.get("filesize") or f.get("filesize_approx") or 0
-                    fmt_list.append({
-                        "id": f["format_id"],
-                        "quality": f"{h}p",
-                        "size": round(size / (1024 * 1024), 2)
-                    })
-
-                fmt_list.sort(key=lambda x: int(x["quality"].replace("p", "")))
-                return fmt_list[:6]
-
-            # اگر مستقیم بود ولی بلاک شد → سوییچ به پروکسی
-            if direct_ok and ("429" in proc.stderr or "Sign in" in proc.stderr):
-                print("[NET] Direct blocked mid-run → switch to proxy", flush=True)
-                direct_ok = False
-                continue
-
-            # اگر با پروکسی بلاک شد
-            if proxy and ("429" in proc.stderr or "Sign in" in proc.stderr):
-                print("[PROXY] Proxy blocked → rotate", flush=True)
+            # اگر خطای 429 / پروکسی بلاک
+            if "429" in proc.stderr or "Sign in to confirm" in proc.stderr:
+                print("[PROXY] Proxy blocked. rotating...", flush=True)
                 remove_bad_proxy(proxy)
                 proxy_cache["expires"] = 0
-                continue
+                continue  # پروکسی بعدی
 
+            # خطاهای دیگر
             return None
 
         except Exception as e:
             print("YT-DLP ERROR:", e, flush=True)
 
+    # اگر ۳ بار تلاش شکست خورد
     return None
-
 
 
 
@@ -565,37 +544,29 @@ def get_video_formats(url):
 # ============================================================
 
 def download_video(url, fmt_id, chat_id):
+    """
+    دانلود با پروکسی سالم + در صورت Fail پروکسی بعدی امتحان شود.
+    """
 
     out = f"/tmp/video_{chat_id}.mp4"
 
-    direct_ok = can_connect_direct_youtube()
-
     for attempt in range(3):
 
-        proxy = None
-        if not direct_ok:
-            proxy = get_working_proxy()
-            if not proxy:
-                print("NO PROXY FOR DOWNLOAD", flush=True)
-                return None
+        proxy = get_working_proxy()
 
-        if proxy:
-            print(f"[DOWNLOAD] Using proxy: {proxy}", flush=True)
-            cmd = YTDLP_CMD + [
-                "--proxy", f"http://{proxy}",
-                "-f", f"{fmt_id}+bestaudio/best",
-                "--merge-output-format", "mp4",
-                "-o", out,
-                url
-            ]
-        else:
-            print("[DOWNLOAD] Using DIRECT connection", flush=True)
-            cmd = YTDLP_CMD + [
-                "-f", f"{fmt_id}+bestaudio/best",
-                "--merge-output-format", "mp4",
-                "-o", out,
-                url
-            ]
+        if proxy is None:
+            print("NO PROXY FOR DOWNLOAD", flush=True)
+            return None
+
+        print(f"[DOWNLOAD] Using proxy: {proxy}", flush=True)
+
+        cmd = YTDLP_CMD + [
+            "--proxy", f"http://{proxy}",
+            "-f", f"{fmt_id}+bestaudio/best",
+            "--merge-output-format", "mp4",
+            "-o", out,
+            url
+        ]
 
         try:
             proc = subprocess.run(
@@ -605,25 +576,24 @@ def download_video(url, fmt_id, chat_id):
                 timeout=300
             )
 
-            if proc.returncode == 0 and os.path.exists(out):
-                return out
+            print("DOWNLOAD CODE:", proc.returncode, flush=True)
 
-            if direct_ok and ("429" in proc.stderr or "Sign in" in proc.stderr):
-                print("[NET] Direct blocked → switching to proxy", flush=True)
-                direct_ok = False
-                continue
+            if proc.returncode == 0:
+                if os.path.exists(out):
+                    return out
 
-            if proxy and ("429" in proc.stderr or "Sign in" in proc.stderr):
+            # خطای پروکسی بلاک
+            if "429" in proc.stderr or "Sign in" in proc.stderr:
                 print("[DOWNLOAD] Proxy blocked → rotate", flush=True)
                 remove_bad_proxy(proxy)
                 proxy_cache["expires"] = 0
+
                 continue
 
-        except Exception as e:
-            print("DOWNLOAD ERROR:", e, flush=True)
+        except:
+            pass
 
     return None
-
 
 
 
