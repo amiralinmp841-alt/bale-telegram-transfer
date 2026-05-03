@@ -179,7 +179,9 @@ async def handle_bot_message(event):
     photo_bytes = None
 
     if msg.photo:
-        photo_bytes = await msg.download_media(bytes)
+        photo_path = await msg.download_media(file="downloads/", part_size_kb=2048)
+        with open(photo_path, "rb") as f:
+            photo_bytes = f.read()
 
     # ارسال به بله
 
@@ -210,7 +212,11 @@ async def handle_bot_message(event):
     if msg.media and hasattr(msg.media, 'document'):
         mime_type = getattr(msg.media.document, 'mime_type', "")
         if mime_type.startswith("video/") or mime_type.startswith("audio/"):
-            file_bytes = await msg.download_media(bytes)
+            file_path = await msg.download_media(file="downloads/", part_size_kb=2048)
+
+            with open(file_path, "rb") as f:
+                file_bytes = f.read()
+            
 
             file_name = "file.mp4"
             for attr in msg.media.document.attributes:
@@ -265,7 +271,9 @@ async def handle_bot_message_edited(event):
 
     photo_bytes = None
     if msg.photo:
-        photo_bytes = await msg.download_media(bytes)
+        photo_path = await msg.download_media(file="downloads/", part_size_kb=2048)
+        with open(photo_path, "rb") as f:
+            photo_bytes = f.read()
 
     from bridge import bale_send_photo, bale_send_text, BALE_API
     import json
