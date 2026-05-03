@@ -6,7 +6,7 @@ from telethon import TelegramClient, events
 from youtube import youtube_search
 import tempfile
 import threading
-
+import re
 
 
 loop = asyncio.new_event_loop()
@@ -174,15 +174,6 @@ async def handle_bot_message(event):
 
             inline.append(line)
 
-    # اضافه کردن دکمه ویدیوهای مرتبط
-
-    inline.append([
-        {
-            "text": "🎯 ویدیوهای مرتبط",
-            "callback_data": "vip_related"
-        }
-    ])
-
     # -------- photo --------
 
     photo_bytes = None
@@ -271,13 +262,6 @@ async def handle_bot_message_edited(event):
                     "callback_data": f"vip_tg|{data}"
                 })
             inline.append(line)
-
-    inline.append([
-        {
-            "text": "🎯 ویدیوهای مرتبط",
-            "callback_data": "vip_related"
-        }
-    ])
 
     photo_bytes = None
     if msg.photo:
@@ -496,7 +480,10 @@ def handle_callback(bale_chat_id, data):
             bale_send_text(bale_chat_id, "❌ ویدیو پیدا نشد.")
             return
 
-        v_id = video.get("video_id") or youtube_extract_id(video["url"])
+        v_id = video.get("video_id") or extract_youtube_id(video["url"])
+        if not v_id:
+            bale_send_text(bale_chat_id, "❌ شناسه ویدیو پیدا نشد.")
+            return
         bale_send_text(bale_chat_id, f"🎯 در حال یافتن ویدیوهای مرتبط با: {video['title']}")
         videos = vip_related(bale_chat_id, v_id)
         if not videos:
@@ -521,3 +508,18 @@ def handle_callback(bale_chat_id, data):
         from bridge import send_vip_results
         send_vip_results(bale_chat_id, videos)
         return
+
+
+def extract_youtube_id(url):
+    patterns = [
+        r"v=([A-Za-z0-9_-]{11})",
+        r"youtu\.be/([A-Za-z0-9_-]{11})",
+        r"shorts/([A-Za-z0-9_-]{11})"
+    ]
+
+    for pattern in patterns:
+        match = re.search(pattern, url)
+        if match:
+            return match.group(1)
+
+    return None
