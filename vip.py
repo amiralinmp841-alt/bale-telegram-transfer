@@ -433,128 +433,126 @@ def process_local_file(bale_chat_id, file_bytes, file_name, mime_type=None, capt
 
     bale_send_text(bale_chat_id, "✅ ارسال کامل شد.")
 
-
 def download_video_by_user(telegram_msg, bale_chat_id, caption=None):
-    bale_send_text(bale_chat_id, str(telegram_msg))
-    return
-    
+    import os, tempfile, time, asyncio
+    from bridge import bale_send_text, bale_send_video
+    from video_utils import split_video_ffmpeg, clean_temp_files
+
     async def task():
-        from bridge import bale_send_text, bale_send_video
-
-        chat_id = telegram_msg["chat"]["id"]
-        
-        if "reply_to_message" not in telegram_msg:
-            bale_send_text(bale_chat_id, "❗ لطفاً روی پیام حاوی ویدیو ریپلای کنید.")
-            return
-        
-        msg_id = telegram_msg["reply_to_message"]["message_id"]
-        
         try:
-            entity = await client.get_entity(int(chat_id))
-            msg = await client.get_messages(entity, ids=int(msg_id))
-        except Exception as e:
-            bale_send_text(bale_chat_id, f"❌ خطا در دریافت پیام تلگرام: {e}")
-            return
-        
-        if not msg:
-            bale_send_text(bale_chat_id, "❌ پیام پیدا نشد.")
-            return
-        
-        media = None
-        
-        # اگر ویدیوی معمولی باشد
-        if msg.video:
-            media = msg.video
-        
-        # اگر فایل ویدیویی باشد
-        elif msg.document and msg.document.mime_type and msg.document.mime_type.startswith("video"):
-            media = msg.document
-        
-        if not media:
-            bale_send_text(bale_chat_id, "❌ این پیام ویدیو نیست.")
-            return
-        
+            chat_id = telegram_msg["chat"]["id"]
+            msg_id = telegram_msg["message_id"]
 
-        bale_send_text(bale_chat_id, "📥 شروع دانلود از تلگرام...")
-
-        tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".mp4")
-
-        last_reported = 0
-        start_time = time.time()
-
-        async def progress_callback(current, total):
-            nonlocal last_reported
-            if total == 0:
+            # تشخیص نوع ویدیو
+            if "video" in telegram_msg:
+                media_data = telegram_msg["video"]
+            elif (
+                "document" in telegram_msg
+                and telegram_msg["document"].get("mime_type", "").startswith("video")
+            ):
+                media_data = telegram_msg["document"]
+            else:
+                bale_send_text(bale_chat_id, "❗ لطفاً فقط ویدیو ارسال کنید.")
                 return
 
-            percent = int(current * 100 / total)
+            bale_send_text(bale_chat_id, "📥 شروع دانلود از تلگرام...")
 
-            # فقط هر 10 درصد گزارش بده
-            if percent >= last_reported + 10:
-                elapsed = time.time() - start_time
-                speed = current / 1024 / 1024 / elapsed if elapsed > 0 else 0
-                bale_send_text(
-                    bale_chat_id,
-                    f"⬇️ دانلود: {percent}%\n🚀 سرعت: {speed:.2f} MB/s"
-                )
-                last_reported = percent
+            # دریافت پیام واقعی از تلگرام با Telethon
+            entity = await client.get_entity(int(chat_id))
+            msg = await client.get_messages(entity, ids=int(msg_id))
 
-        try:
-            path = await client.download_media(
-                media,
-                file=tmp.name,
-                part_size_kb=4096,
-                progress_callback=progress_callback
+            if not msg:
+                bale_send_text(bale_chat_id, "❌ پیام ویدیو پیدا نشد.")
+                return
+
+            # انتخاب صحیح مدیا
+            media = msg.video or (
+                msg.document if (msg.document and msg.document.mime_type and msg.document.mime_type.startswith("video"))
+                else None
             )
-                 
-        except Exception as e:
-            bale_send_text(bale_chat_id, f"❌ خطا هنگام دانلود: {e}")
-            return
 
-        if not path or not os.path.exists(path):
-            bale_send_text(bale_chat_id, "❌ فایل دانلود نشد.")
-            return
+            if not media:
+                bale_send_text(bale_chat_id, "❌ این پیام حاوی ویدیو نیست.")
+                return
 
-        bale_send_text(bale_chat_id, "✅ دانلود کامل شد.")
+            tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".mp4")
 
-        file_size = os.path.getsize(path)
-        MAX_SIZE = 20 * 1024 * 1024
+            last_reported = 0
+            start_time = time.time()
 
-        # اگر کوچکتر از 20MB بود مستقیم ارسال شود
-        if file_size <= MAX_SIZE:
-            with open(path, "rb") as f:
-                bale_send_video(bale_chat_id, f.read(), caption or "🎬 ویدیو")
-            os.unlink(path)
-            bale_send_text(bale_chat_id, "✅ ارسال تکمیل شد.")
-            return
+            async def progress_callback(current, total):
+                nonlocal last_reported
+                if total == 0:
+                    return
+                percent = int(current * 100 / total)
+                if percent >= last_reported + 10:
+                    elapsed = time.time() - start_time
+                    speed = current / 1024 / 1024 / elapsed if elapsed > 0 else 0
+                    bale_send_text(
+                        bale_chat_id,
+                        f"⬇️ دانلود: {percent}%\n🚀 سرعت: {speed:.2f} MB/s"
+                    )
+                    last_reported = percent
 
-        bale_send_text(bale_chat_id, "✂️ در حال تقسیم فایل به پارت‌های زیر ۲۰MB...")
+            # دانلود ویدیو با Telethon
+            try:
+                path = await client.download_media(
+                    media,
+                    file=tmp.name,
+                    part_size_kb=4096,
+                    progress_callback=progress_callback
+                )
+            except Exception as e:
+                bale_send_text(bale_chat_id, f"❌ خطا هنگام دانلود: {e}")
+                return
 
-        parts = split_video_ffmpeg(path, bale_chat_id)
+            if not path or not os.path.exists(path):
+                bale_send_text(bale_chat_id, "❌ فایل ویدیو پیدا نشد.")
+                return
 
-        if not parts:
-            bale_send_text(bale_chat_id, "❌ تقسیم فایل شکست خورد.")
+            bale_send_text(bale_chat_id, "✅ دانلود کامل شد.")
+
+            file_size = os.path.getsize(path)
+            MAX_SIZE = 20 * 1024 * 1024
+
+            # ارسال مستقیم اگر کوچک‌تر از 20MB بود
+            if file_size <= MAX_SIZE:
+                with open(path, "rb") as f:
+                    bale_send_video(bale_chat_id, f.read(), caption or "🎬 ویدیو")
+                os.unlink(path)
+                bale_send_text(bale_chat_id, "✅ ارسال تکمیل شد.")
+                return
+
+            # تقسیم ویدیو به پارت‌های زیر ۲۰ مگابایت
+            bale_send_text(bale_chat_id, "✂️ در حال تقسیم فایل به پارت‌های زیر ۲۰MB...")
+
+            parts = split_video_ffmpeg(path, bale_chat_id)
+            if not parts:
+                bale_send_text(bale_chat_id, "❌ تقسیم فایل شکست خورد.")
+                clean_temp_files(bale_chat_id)
+                os.unlink(path)
+                return
+
+            title = caption or "🎬 ویدیو"
+            total = len(parts)
+
+            for i, part in enumerate(parts, 1):
+                bale_send_text(bale_chat_id, f"⬆️ ارسال پارت {i}/{total} ...")
+                with open(part, "rb") as f:
+                    bale_send_video(
+                        bale_chat_id,
+                        f.read(),
+                        caption=f"{title}\n📦 پارت {i}/{total}"
+                    )
+
             clean_temp_files(bale_chat_id)
             os.unlink(path)
-            return
+            bale_send_text(bale_chat_id, "✅ همهٔ پارت‌ها ارسال شدند.")
 
-        total = len(parts)
-        title = caption or "🎬 ویدیو"
+        except Exception as e:
+            bale_send_text(bale_chat_id, f"❌ خطای کلی در پردازش ویدیو: {e}")
 
-        for i, part in enumerate(parts, 1):
-            bale_send_text(bale_chat_id, f"⬆️ ارسال پارت {i}/{total} ...")
-            with open(part, "rb") as f:
-                bale_send_video(
-                    bale_chat_id,
-                    f.read(),
-                    caption=f"{title}\n📦 پارت {i}/{total}"
-                )
-
-        clean_temp_files(bale_chat_id)
-        os.unlink(path)
-
-        bale_send_text(bale_chat_id, "✅ همهٔ پارت‌ها ارسال شدند.")
-        
+    # اجرای async task
     asyncio.run_coroutine_threadsafe(task(), loop)
 
 
