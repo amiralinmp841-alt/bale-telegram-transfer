@@ -448,9 +448,24 @@ def download_video_by_user(telegram_msg, bale_chat_id, caption=None):
             bale_send_text(bale_chat_id, f"❌ خطا در دریافت پیام تلگرام: {e}")
             return
 
-        if not msg or not msg.video:
-            bale_send_text(bale_chat_id, "❌ ویدیوی مورد نظر یافت نشد.")
+        if not msg:
+            bale_send_text(bale_chat_id, "❌ پیام پیدا نشد.")
             return
+        
+        media = None
+        
+        # اگر ویدیوی معمولی باشد
+        if msg.video:
+            media = msg.video
+        
+        # اگر فایل ویدیویی باشد
+        elif msg.document and msg.document.mime_type and msg.document.mime_type.startswith("video"):
+            media = msg.document
+        
+        if not media:
+            bale_send_text(bale_chat_id, "❌ این پیام ویدیو نیست.")
+            return
+        
 
         bale_send_text(bale_chat_id, "📥 شروع دانلود از تلگرام...")
 
@@ -477,11 +492,13 @@ def download_video_by_user(telegram_msg, bale_chat_id, caption=None):
                 last_reported = percent
 
         try:
-            path = await msg.download_media(
+            path = await client.download_media(
+                media,
                 file=tmp.name,
-                part_size_kb=4096,   # ✅ افزایش سایز chunk (۴MB)
+                part_size_kb=4096,
                 progress_callback=progress_callback
             )
+                 
         except Exception as e:
             bale_send_text(bale_chat_id, f"❌ خطا هنگام دانلود: {e}")
             return
