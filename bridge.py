@@ -420,6 +420,16 @@ def handle_telegram_update(upd):
         elif "video" in msg:
             file_id = msg["video"]["file_id"]
             file_type = "video"
+            
+            video_size = msg["video"].get("file_size", 0)
+            MAX_SIZE = 20 * 1024 * 1024  # 20 MB
+        
+            if video_size > MAX_SIZE:
+                from vip import download_video_by_user
+                bale_send_text(bale_user, "📥 ویدیو بزرگ است، در حال دانلود با User API...")
+                # ارسال به تابع Telethon برای دانلود و پارت‌بندی
+                download_video_by_user(msg, bale_user, caption)
+                return
     
         elif "voice" in msg:
             file_id = msg["voice"]["file_id"]
