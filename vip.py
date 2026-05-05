@@ -433,10 +433,65 @@ def process_local_file(bale_chat_id, file_bytes, file_name, mime_type=None, capt
 
     bale_send_text(bale_chat_id, "✅ ارسال کامل شد.")
 
+def split_video_ffmpeg_vip(input_path, bale_chat_id, max_part_mb=18):
+    import os, subprocess, tempfile
+
+    try:
+        # گرفتن حجم فایل
+        file_size = os.path.getsize(input_path)
+        file_size_mb = file_size / (1024 * 1024)
+
+        # گرفتن مدت زمان ویدیو با ffprobe
+        cmd_duration = [
+            "ffprobe", "-v", "error",
+            "-show_entries", "format=duration",
+            "-of", "default=nokey=1:noprint_wrappers=1",
+            input_path
+        ]
+        total_duration = float(subprocess.check_output(cmd_duration).decode().strip())
+
+        # محاسبه مدت زمان هر پارت بر اساس فرمول شما:
+        # segment_time = total_duration * (18MB / total_file_MB)
+        ratio = max_part_mb / file_size_mb
+        segment_time = max(int(total_duration * ratio), 5)   # حداقل 5 ثانیه
+
+        # مسیر خروجی
+        out_dir = tempfile.mkdtemp(prefix="bale_split_")
+        output_pattern = os.path.join(out_dir, "part_%03d.mp4")
+
+        # دستور تقسیم با ffmpeg بر اساس segment_time
+        cmd = [
+            "ffmpeg", "-y",
+            "-i", input_path,
+            "-c", "copy",
+            "-map", "0",
+            "-f", "segment",
+            "-segment_time", str(segment_time),
+            "-reset_timestamps", "1",
+            output_pattern
+        ]
+
+        subprocess.run(cmd, check=True)
+
+        # جمع کردن لیست فایل‌های خروجی
+        parts = [
+            os.path.join(out_dir, f)
+            for f in sorted(os.listdir(out_dir))
+            if f.endswith(".mp4")
+        ]
+
+        return parts
+
+    except Exception as e:
+        from bridge import bale_send_text
+        bale_send_text(bale_chat_id, f"❌ خطا در split: {e}")
+        return []
+
+
 def download_video_by_user(telegram_msg, bale_chat_id, caption=None):
     import os, tempfile, time, asyncio
     from bridge import bale_send_text, bale_send_video
-    from video_utils import split_video_ffmpeg, clean_temp_files
+    from video_utils import split_video_ffmpeg_vip, clean_temp_files
 
     async def task():
         try:
@@ -526,7 +581,7 @@ def download_video_by_user(telegram_msg, bale_chat_id, caption=None):
             # تقسیم ویدیو به پارت‌های زیر ۲۰ مگابایت
             bale_send_text(bale_chat_id, "✂️ در حال تقسیم فایل به پارت‌های زیر ۲۰MB...")
 
-            parts = split_video_ffmpeg(path, bale_chat_id)
+            parts = split_video_ffmpeg_vip(path, bale_chat_id)
             if not parts:
                 bale_send_text(bale_chat_id, "❌ تقسیم فایل شکست خورد.")
                 clean_temp_files(bale_chat_id)
