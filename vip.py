@@ -439,15 +439,20 @@ def download_video_by_user(telegram_msg, bale_chat_id, caption=None):
         from bridge import bale_send_text, bale_send_video
 
         chat_id = telegram_msg["chat"]["id"]
-        msg_id = telegram_msg["message_id"]
-
+        
+        if "reply_to_message" not in telegram_msg:
+            bale_send_text(bale_chat_id, "❗ لطفاً روی پیام حاوی ویدیو ریپلای کنید.")
+            return
+        
+        msg_id = telegram_msg["reply_to_message"]["message_id"]
+        
         try:
-            entity = await client.get_entity(chat_id)
-            msg = await client.get_messages(entity, ids=msg_id)
+            entity = await client.get_entity(int(chat_id))
+            msg = await client.get_messages(entity, ids=int(msg_id))
         except Exception as e:
             bale_send_text(bale_chat_id, f"❌ خطا در دریافت پیام تلگرام: {e}")
             return
-
+        
         if not msg:
             bale_send_text(bale_chat_id, "❌ پیام پیدا نشد.")
             return
