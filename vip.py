@@ -435,6 +435,9 @@ def process_local_file(bale_chat_id, file_bytes, file_name, mime_type=None, capt
 
 
 def download_video_by_user(telegram_msg, bale_chat_id, caption=None):
+    bale_send_text(bale_chat_id, str(telegram_msg))
+    return
+    
     async def task():
         from bridge import bale_send_text, bale_send_video
 
