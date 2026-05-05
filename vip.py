@@ -7,6 +7,7 @@ from youtube import youtube_search
 import tempfile
 import threading
 import re
+import time
 
 
 loop = asyncio.new_event_loop()
@@ -179,9 +180,7 @@ async def handle_bot_message(event):
     photo_bytes = None
 
     if msg.photo:
-        photo_path = await client.download_media(msg, file="downloads/")
-        with open(photo_path, "rb") as f:
-            photo_bytes = f.read()
+        photo_bytes = await msg.download_media(bytes)
 
     # ارسال به بله
 
@@ -212,11 +211,7 @@ async def handle_bot_message(event):
     if msg.media and hasattr(msg.media, 'document'):
         mime_type = getattr(msg.media.document, 'mime_type', "")
         if mime_type.startswith("video/") or mime_type.startswith("audio/"):
-            file_path = await client.download_media(msg, file="downloads/")
-
-            with open(file_path, "rb") as f:
-                file_bytes = f.read()
-            
+            file_bytes = await msg.download_media(bytes)
 
             file_name = "file.mp4"
             for attr in msg.media.document.attributes:
@@ -271,9 +266,7 @@ async def handle_bot_message_edited(event):
 
     photo_bytes = None
     if msg.photo:
-        photo_path = await client.download_media(msg, file="downloads/")
-        with open(photo_path, "rb") as f:
-            photo_bytes = f.read()
+        photo_bytes = await msg.download_media(bytes)
 
     from bridge import bale_send_photo, bale_send_text, BALE_API
     import json
@@ -439,6 +432,105 @@ def process_local_file(bale_chat_id, file_bytes, file_name, mime_type=None, capt
     os.unlink(local_path)
 
     bale_send_text(bale_chat_id, "✅ ارسال کامل شد.")
+
+
+def download_video_by_user(telegram_msg, bale_chat_id, caption=None):
+    async def task():
+        from bridge import bale_send_text, bale_send_video
+
+        chat_id = telegram_msg["chat"]["id"]
+        msg_id = telegram_msg["message_id"]
+
+        try:
+            entity = await client.get_entity(chat_id)
+            msg = await client.get_messages(entity, ids=msg_id)
+        except Exception as e:
+            bale_send_text(bale_chat_id, f"❌ خطا در دریافت پیام تلگرام: {e}")
+            return
+
+        if not msg or not msg.video:
+            bale_send_text(bale_chat_id, "❌ ویدیوی مورد نظر یافت نشد.")
+            return
+
+        bale_send_text(bale_chat_id, "📥 شروع دانلود از تلگرام...")
+
+        tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".mp4")
+
+        last_reported = 0
+        start_time = time.time()
+
+        async def progress_callback(current, total):
+            nonlocal last_reported
+            if total == 0:
+                return
+
+            percent = int(current * 100 / total)
+
+            # فقط هر 10 درصد گزارش بده
+            if percent >= last_reported + 10:
+                elapsed = time.time() - start_time
+                speed = current / 1024 / 1024 / elapsed if elapsed > 0 else 0
+                bale_send_text(
+                    bale_chat_id,
+                    f"⬇️ دانلود: {percent}%\n🚀 سرعت: {speed:.2f} MB/s"
+                )
+                last_reported = percent
+
+        try:
+            path = await msg.download_media(
+                file=tmp.name,
+                part_size_kb=4096,   # ✅ افزایش سایز chunk (۴MB)
+                progress_callback=progress_callback
+            )
+        except Exception as e:
+            bale_send_text(bale_chat_id, f"❌ خطا هنگام دانلود: {e}")
+            return
+
+        if not path or not os.path.exists(path):
+            bale_send_text(bale_chat_id, "❌ فایل دانلود نشد.")
+            return
+
+        bale_send_text(bale_chat_id, "✅ دانلود کامل شد.")
+
+        file_size = os.path.getsize(path)
+        MAX_SIZE = 20 * 1024 * 1024
+
+        # اگر کوچکتر از 20MB بود مستقیم ارسال شود
+        if file_size <= MAX_SIZE:
+            with open(path, "rb") as f:
+                bale_send_video(bale_chat_id, f.read(), caption or "🎬 ویدیو")
+            os.unlink(path)
+            bale_send_text(bale_chat_id, "✅ ارسال تکمیل شد.")
+            return
+
+        bale_send_text(bale_chat_id, "✂️ در حال تقسیم فایل به پارت‌های زیر ۲۰MB...")
+
+        parts = split_video_ffmpeg(path, bale_chat_id)
+
+        if not parts:
+            bale_send_text(bale_chat_id, "❌ تقسیم فایل شکست خورد.")
+            clean_temp_files(bale_chat_id)
+            os.unlink(path)
+            return
+
+        total = len(parts)
+        title = caption or "🎬 ویدیو"
+
+        for i, part in enumerate(parts, 1):
+            bale_send_text(bale_chat_id, f"⬆️ ارسال پارت {i}/{total} ...")
+            with open(part, "rb") as f:
+                bale_send_video(
+                    bale_chat_id,
+                    f.read(),
+                    caption=f"{title}\n📦 پارت {i}/{total}"
+                )
+
+        clean_temp_files(bale_chat_id)
+        os.unlink(path)
+
+        bale_send_text(bale_chat_id, "✅ همهٔ پارت‌ها ارسال شدند.")
+        
+    asyncio.run_coroutine_threadsafe(task(), loop)
 
 
 
