@@ -433,7 +433,7 @@ def process_local_file(bale_chat_id, file_bytes, file_name, mime_type=None, capt
 
     bale_send_text(bale_chat_id, "✅ ارسال کامل شد.")
 
-def split_video_ffmpeg_vip(input_path, bale_chat_id, max_part_mb=18):
+def split_video_ffmpeg_vip(input_path, bale_chat_id, max_part_mb=10):
     import os, subprocess, tempfile
 
     try:
